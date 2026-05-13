@@ -1,0 +1,13 @@
+{
+  "name": "rn-network-debugger",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "yarn workspaces run build",
+    "dev:ui": "yarn workspace @rn-network-debugger/ui dev",
+    "dev:server": "yarn workspace @rn-network-debugger/server dev"
+  }
+}

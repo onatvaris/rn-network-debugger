@@ -1,0 +1,9 @@
+{
+  "name": "@rn-network-debugger/core",
+  "version": "1.0.0",
+  "description": "Network interceptors for React Native (fetch, XHR, Axios, WebSocket)",
+  "main": "src/index.js",
+  "peerDependencies": {
+    "react-native": ">=0.71.0"
+  }
+}

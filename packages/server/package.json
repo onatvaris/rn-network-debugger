@@ -1,0 +1,15 @@
+{
+  "name": "@rn-network-debugger/server",
+  "version": "1.0.0",
+  "description": "DevTools WebSocket server - Metro ile birlikte çalışır",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  }
+}

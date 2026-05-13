@@ -1,0 +1,9 @@
+{
+  "name": "@rn-network-debugger/metro-plugin",
+  "version": "1.0.0",
+  "description": "Metro config wrapper - DevTools server'ı otomatik başlatır",
+  "main": "src/index.js",
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}
