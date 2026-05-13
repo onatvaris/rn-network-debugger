@@ -42,9 +42,15 @@ export class NetworkEventEmitter {
     return id;
   }
 
-  /**
-   * İstek yanıt aldığında çağrılır.
-   */
+  onRequestHeadersUpdate(id, headers) {
+    if (!id) return;
+    const req = this._requests.get(id);
+    if (!req) return;
+    const updated = { ...req, headers };
+    this._requests.set(id, updated);
+    this._emit('request:update', updated);
+  }
+
   onRequestDone(id, { status, statusText, headers, body, size }) {
     if (!id) return;
     const req = this._requests.get(id);
@@ -126,10 +132,23 @@ export class NetworkEventEmitter {
   _sanitizeBody(body) {
     if (body === null || body === undefined) return null;
     if (typeof body === 'string') {
-      // JSON parse dene, başarısız olursa string olarak bırak
       try { return JSON.parse(body); } catch { return body; }
     }
-    if (body instanceof FormData) return '[FormData]';
+    if (body instanceof FormData) {
+      const entries = {};
+      body.forEach((value, key) => {
+        if (value && typeof value === 'object' && (value.uri != null || value.name != null)) {
+          // RN FormData file: { uri, name, type } — no size property
+          const label = value.name || 'unknown';
+          const type = value.type || 'unknown type';
+          const uri = value.uri ? `, uri: ${value.uri}` : '';
+          entries[key] = `[File: ${label}, ${type}${uri}]`;
+        } else {
+          entries[key] = value;
+        }
+      });
+      return { _type: 'FormData', entries };
+    }
     if (body instanceof ArrayBuffer) return '[ArrayBuffer]';
     if (body instanceof Blob) return '[Blob]';
     return body;

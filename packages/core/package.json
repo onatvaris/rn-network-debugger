@@ -1,8 +1,30 @@
 {
-  "name": "@rn-network-debugger/core",
+  "name": "@onatvaris/rn-network-debugger-core",
   "version": "1.0.0",
-  "description": "Network interceptors for React Native (fetch, XHR, Axios, WebSocket)",
+  "description": "Network interceptors for React Native (fetch, XHR, Axios, WebSocket, OkHttp, NSURLProtocol)",
   "main": "src/index.js",
+  "files": [
+    "src/",
+    "android/",
+    "ios/"
+  ],
+  "keywords": [
+    "react-native",
+    "network",
+    "debugger",
+    "interceptor",
+    "devtools",
+    "fetch",
+    "xhr",
+    "axios",
+    "websocket"
+  ],
+  "author": "Onat Varis",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onatvaris/rn-network-debugger"
+  },
   "peerDependencies": {
     "react-native": ">=0.71.0"
   }

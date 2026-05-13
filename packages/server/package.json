@@ -1,11 +1,31 @@
 {
-  "name": "@rn-network-debugger/server",
+  "name": "@onatvaris/rn-network-debugger-server",
   "version": "1.0.0",
-  "description": "DevTools WebSocket server - Metro ile birlikte çalışır",
+  "description": "DevTools WebSocket + HTTP server for RN Network Debugger",
   "main": "src/index.js",
   "scripts": {
     "dev": "node src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "build:ui": "cd ../ui && npm install && npm run build",
+    "prepublishOnly": "npm run build:ui"
+  },
+  "files": [
+    "src/",
+    "public/"
+  ],
+  "keywords": [
+    "react-native",
+    "network",
+    "debugger",
+    "devtools",
+    "websocket",
+    "server"
+  ],
+  "author": "Onat Varis",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onatvaris/rn-network-debugger"
   },
   "dependencies": {
     "ws": "^8.16.0",

@@ -1,222 +1,168 @@
 # RN Network Debugger
 
-React Native projeleri için sıfır bağımlılıklı, tarayıcı tabanlı network debugger.  
-Hem **Bare React Native** hem **Expo** projelerinde çalışır. Android ve iOS'u destekler.
+A zero-dependency, browser-based network debugger for React Native.
+Works with both **Bare React Native** and **Expo** projects. Supports Android and iOS.
 
-> **Herhangi bir üçüncü parti araç (Flipper, Proxyman, Charles vb.) gerektirmez.**  
-> Metro başladığında DevTools server otomatik ayağa kalkar. Tarayıcıda `http://localhost:8788` açman yeterli.
+> **No third-party tools required (Flipper, Proxyman, Charles, etc.)**
+> The DevTools server starts automatically when Metro launches. Just open `http://localhost:8788` in your browser.
 
 ---
 
-## İçindekiler
+## Table of Contents
 
-- [Mimari](#mimari)
-- [Özellikler](#özellikler)
-- [Proje Yapısı](#proje-yapısı)
-- [Bare React Native — Kurulum](#bare-react-native--kurulum)
-- [Expo — Kurulum](#expo--kurulum)
+- [Architecture](#architecture)
+- [Features](#features)
+- [Bare React Native — Setup](#bare-react-native--setup)
+- [Expo — Setup](#expo--setup)
+- [Optional: Cookie Injection](#optional-cookie-injection)
 - [Android Native HTTP (OkHttp)](#android-native-http-okhttp)
 - [iOS Native HTTP (NSURLProtocol)](#ios-native-http-nsurlprotocol)
-- [DevTools UI Kullanımı](#devtools-ui-kullanımı)
-- [API Referansı](#api-referansı)
-- [Sorun Giderme](#sorun-giderme)
-- [Sık Sorulan Sorular](#sık-sorulan-sorular)
+- [DevTools UI Usage](#devtools-ui-usage)
+- [API Reference](#api-reference)
+- [Troubleshooting](#troubleshooting)
+- [FAQ](#faq)
+- [Contributing](#contributing)
 
 ---
 
-## Mimari
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                       React Native Uygulaması                    │
+│                       React Native App                           │
 │                                                                  │
 │  fetch()  ──┐                                                    │
 │  XHR      ──┤                                                    │
 │  Axios    ──┼──► NetworkEventEmitter ──► WebSocket Client        │
 │  WS       ──┘                                  │                 │
-│                                         (otomatik yeniden       │
-│  [Android] OkHttp ─────────────────────  bağlanma)              │
+│                                         (auto-reconnect)         │
+│  [Android] OkHttp ─────────────────────       │                 │
 │  [iOS] NSURLProtocol ───────────────────       │                 │
 └────────────────────────────────────────────────┼────────────────┘
                                                  │ ws://<host>:8788/app
                               ┌──────────────────▼──────────────────┐
                               │          DevTools Server             │
                               │      Node.js / localhost:8788        │
-                              │    Metro ile birlikte otomatik başlar│
+                              │    Starts automatically with Metro   │
                               └──────────────────┬───────────────────┘
                                                  │ ws://localhost:8788/ui
                               ┌──────────────────▼───────────────────┐
                               │           DevTools UI                 │
                               │       http://localhost:8788           │
-                              │        Tarayıcıda açılır             │
+                              │        Open in browser               │
                               └──────────────────────────────────────┘
 ```
 
-**Veri akışı:**
-1. Uygulamadaki her network isteği `core` paketi tarafından yakalanır
-2. WebSocket üzerinden `server`'a iletilir (bağlantı yoksa kuyruğa alınır)
-3. `server`, bağlı tüm tarayıcı panellerine olayı yayar
-4. Tarayıcıdaki UI gerçek zamanlı güncellenir
+**Data flow:**
+1. Every network request in the app is captured by the `core` package
+2. Forwarded to the `server` over WebSocket (queued if disconnected)
+3. `server` broadcasts the event to all connected browser panels
+4. The browser UI updates in real time
 
 ---
 
-## Özellikler
+## Features
 
-| Özellik | Durum | Not |
-|---------|-------|-----|
-| `fetch()` yakalama | ✅ | Otomatik, kurulum gerekmez |
-| `XMLHttpRequest` yakalama | ✅ | Otomatik, kurulum gerekmez |
-| `Axios` yakalama | ✅ | Axios yüklüyse otomatik algılanır |
-| `WebSocket` yakalama | ✅ | Send/receive mesaj geçmişi dahil |
-| Android Native HTTP (OkHttp) | ✅ | Ek kurulum gerekli → [bak](#android-native-http-okhttp) |
-| iOS Native HTTP (NSURLProtocol) | ✅ | Ek kurulum gerekli → [bak](#ios-native-http-nsurlprotocol) |
-| Request body | ✅ | JSON otomatik parse ve formatlanır |
-| Response body | ✅ | JSON otomatik parse ve formatlanır |
-| Header inceleme | ✅ | İstek ve yanıt header'ları ayrı gösterilir |
-| Timing bilgisi | ✅ | Süre, başlangıç/bitiş zamanı, response boyutu |
-| URL filtreleme | ✅ | Anlık arama, büyük/küçük harf duyarsız |
-| Tür filtreleme | ✅ | fetch · xhr · axios · native · websocket |
-| Durum filtreleme | ✅ | Başarılı · Hatalı · Bekleyen |
-| Bağlantı sonrası geçmiş | ✅ | UI sonradan açılsa bile son 1000 istek yüklenir |
-| Çoklu cihaz/simülatör | ✅ | Tüm cihazlardan gelen istekler tek panelde |
-| Production'da sıfır maliyet | ✅ | `__DEV__` false olduğunda hiçbir kod çalışmaz |
-| Otomatik yeniden bağlanma | ✅ | Bağlantı kopunca 2 saniyede yeniden dener |
-
----
-
-## Proje Yapısı
-
-```
-rn-network-debugger/
-├── packages/
-│   ├── core/                        # RN uygulamasına eklenen interceptor paketi
-│   │   ├── src/
-│   │   │   ├── index.js             # startNetworkDebugger() — ana giriş noktası
-│   │   │   ├── emitter.js           # Merkezi olay bus'ı
-│   │   │   ├── transport.js         # WebSocket bağlantı yönetimi + kuyruk
-│   │   │   └── interceptors/
-│   │   │       ├── fetch.js         # global.fetch monkey-patch
-│   │   │       ├── xhr.js           # XMLHttpRequest wrap
-│   │   │       ├── axios.js         # Axios interceptor API entegrasyonu
-│   │   │       └── websocket.js     # global.WebSocket proxy
-│   │   ├── android/                 # OkHttp interceptor (Java)
-│   │   │   └── .../
-│   │   │       ├── RNNetworkDebuggerModule.java
-│   │   │       └── DebugOkHttpClientFactory.java
-│   │   └── ios/                     # NSURLProtocol (Objective-C)
-│   │       ├── RNNetworkDebuggerURLProtocol.h
-│   │       └── RNNetworkDebuggerURLProtocol.m
-│   │
-│   ├── server/                      # DevTools WebSocket + HTTP sunucusu
-│   │   └── src/index.js             # Express + ws, port 8788
-│   │
-│   ├── metro-plugin/                # Metro config wrapper — server'ı otomatik başlatır
-│   │   └── src/index.js
-│   │
-│   └── ui/                          # Tarayıcı tabanlı DevTools paneli (React + Vite)
-│       ├── src/
-│       │   ├── App.jsx              # Ana uygulama — istek listesi + detay paneli
-│       │   └── main.jsx
-│       └── index.html
-│
-├── example/
-│   └── setup.js                     # Kopyalanabilir entegrasyon örneği
-└── README.md
-```
+| Feature | Status | Note |
+|---------|--------|------|
+| `fetch()` interception | ✅ | Automatic, no setup required |
+| `XMLHttpRequest` interception | ✅ | Automatic, no setup required |
+| `Axios` interception | ✅ | Auto-detected if Axios is installed |
+| `WebSocket` interception | ✅ | Includes send/receive message history |
+| Android Native HTTP (OkHttp) | ✅ | Additional setup required → [see](#android-native-http-okhttp) |
+| iOS Native HTTP (NSURLProtocol) | ✅ | Additional setup required → [see](#ios-native-http-nsurlprotocol) |
+| Cookie Store | ✅ | Captures Set-Cookie headers; view, edit, and delete by platform/domain |
+| Cookie injection | ✅ | Auto-injects cookies into requests (requires `@react-native-cookies/cookies`) |
+| Platform detection | ✅ | Android / iOS badge per request (via User-Agent / `x-app-device` header) |
+| cURL export | ✅ | Copy any request as a ready-to-run cURL command |
+| Color Thresholds | ✅ | Highlight slow or large requests with custom color rules |
+| Request body | ✅ | JSON is automatically parsed and formatted |
+| Response body | ✅ | JSON is automatically parsed and formatted |
+| Header inspection | ✅ | Request and response headers shown separately |
+| Timing info | ✅ | Duration, start/end time, response size |
+| URL filtering | ✅ | Live search, case-insensitive |
+| Type filtering | ✅ | fetch · xhr · axios · native · websocket |
+| Status filtering | ✅ | Success · Error · Pending |
+| History on reconnect | ✅ | Last 1000 requests loaded even if UI opens late |
+| Multiple devices/simulators | ✅ | Requests from all devices appear in one panel |
+| Zero cost in production | ✅ | No code runs when `__DEV__` is false |
+| Auto-reconnect | ✅ | Retries after 2 seconds on disconnect |
 
 ---
 
-## Bare React Native — Kurulum
+## Bare React Native — Setup
 
-### Adım 1 — Server bağımlılıklarını kur
+### Step 1 — Install
 
 ```bash
-cd rn-network-debugger/packages/server
-npm install
+npm install @onatvaris/rn-network-debugger-core \
+            @onatvaris/rn-network-debugger-metro-plugin \
+            @onatvaris/rn-network-debugger-server
 ```
 
-### Adım 2 — Projeye local paket olarak ekle
-
-Projenin `package.json` dosyasına ekle (dizin yolunu kendi yapına göre ayarla):
-
-```json
-{
-  "dependencies": {
-    "@rn-network-debugger/core": "file:../rn-network-debugger/packages/core",
-    "@rn-network-debugger/metro-plugin": "file:../rn-network-debugger/packages/metro-plugin"
-  }
-}
-```
-
-```bash
-cd MyRNApp
-npm install
-```
-
-### Adım 3 — metro.config.js
+### Step 2 — metro.config.js
 
 ```js
 const { getDefaultConfig } = require('@react-native/metro-config');
-const { withNetworkDebugger } = require('@rn-network-debugger/metro-plugin');
+const { withNetworkDebugger } = require('@onatvaris/rn-network-debugger-metro-plugin');
 
 const config = getDefaultConfig(__dirname);
 
 module.exports = withNetworkDebugger(config, {
-  port: 8788, // opsiyonel, varsayılan: 8788
+  port: 8788, // optional, default: 8788
 });
 ```
 
-> `withNetworkDebugger` Metro başladığında DevTools server'ını otomatik ayağa kaldırır.
-> Ayrı terminal açmana gerek yok.
+> `withNetworkDebugger` automatically starts the DevTools server when Metro launches.
+> No separate terminal needed.
 
-### Adım 4 — index.js
+### Step 3 — index.js
 
-Dosyanın **en üstüne**, tüm diğer import'lardan önce ekle:
+Add to the **very top** of the file, before all other imports:
 
 ```js
-// ✅ Doğru: en üstte
 import { Platform } from 'react-native';
-import { startNetworkDebugger } from '@rn-network-debugger/core';
+import { startNetworkDebugger } from '@onatvaris/rn-network-debugger-core';
 
 if (__DEV__) {
   const host = Platform.OS === 'android'
-    ? '10.0.2.2'   // Android emülatör → host makineye erişim
-    : 'localhost';  // iOS simülatör
+    ? '10.0.2.2'   // Android emulator → host machine
+    : 'localhost';  // iOS simulator
 
   startNetworkDebugger({
     serverUrl: `ws://${host}:8788/app`,
   });
 }
 
-// Sonra diğer import'lar...
+// Then the rest of your imports...
 import { AppRegistry } from 'react-native';
 import App from './App';
 AppRegistry.registerComponent('MyApp', () => App);
 ```
 
-> ⚠️ `startNetworkDebugger` diğer import'lardan önce çağrılmalı.
-> Aksi hâlde uygulama başlar başlamaz yapılan ilk istekler yakalanamaz.
+> ⚠️ `startNetworkDebugger` must be called before all other imports.
+> Otherwise, requests made at app startup may not be captured.
 
-### Adım 5 — Android port yönlendirme
+### Step 4 — Android port forwarding
 
-Her oturum başında bir kez çalıştır:
+Run once at the start of each session:
 
 ```bash
 adb reverse tcp:8788 tcp:8788
 ```
 
-### Adım 6 — Çalıştır
+### Step 5 — Run
 
 ```bash
-# Terminal 1 — Metro (DevTools server otomatik başlar)
+# Terminal 1 — Metro (DevTools server starts automatically)
 npx react-native start
 
 # Terminal 2
-npx react-native run-ios     # iOS için
-npx react-native run-android # Android için
+npx react-native run-ios     # for iOS
+npx react-native run-android # for Android
 ```
 
-Metro başladığında terminalde şunu görmelisin:
+When Metro starts, you should see this in the terminal:
 
 ```
 ╔════════════════════════════════════════════╗
@@ -227,42 +173,27 @@ Metro başladığında terminalde şunu görmelisin:
 ╚════════════════════════════════════════════╝
 ```
 
-Tarayıcıda `http://localhost:8788` aç. Sol üstte yeşil nokta = bağlantı kuruldu.
+Open `http://localhost:8788` in your browser. A green dot in the top-left means connected.
 
 ---
 
-## Expo — Kurulum
+## Expo — Setup
 
-Expo Managed Workflow'da native modüller (OkHttp / NSURLProtocol) kullanılamaz,
-ancak JS katmanı interceptor'ları (fetch, XHR, Axios, WebSocket) tam çalışır.
+In Expo Managed Workflow, native modules (OkHttp / NSURLProtocol) are unavailable,
+but JS-layer interceptors (fetch, XHR, Axios, WebSocket) work fully.
 
-### Adım 1 — Server bağımlılıklarını kur
-
-```bash
-cd rn-network-debugger/packages/server
-npm install
-```
-
-### Adım 2 — Projeye local paket olarak ekle
-
-```json
-{
-  "dependencies": {
-    "@rn-network-debugger/core": "file:../rn-network-debugger/packages/core"
-  }
-}
-```
+### Step 1 — Install
 
 ```bash
-cd MyExpoApp
-npm install
+npm install @onatvaris/rn-network-debugger-core \
+            @onatvaris/rn-network-debugger-server
 ```
 
-### Adım 3 — app/_layout.tsx veya App.tsx
+### Step 2 — app/_layout.tsx or App.tsx
 
 ```tsx
 import { Platform } from 'react-native';
-import { startNetworkDebugger } from '@rn-network-debugger/core';
+import { startNetworkDebugger } from '@onatvaris/rn-network-debugger-core';
 import Constants from 'expo-constants';
 
 if (__DEV__) {
@@ -277,40 +208,46 @@ if (__DEV__) {
 }
 ```
 
-### Adım 4 — Server'ı manuel başlat
-
-Expo'da metro-plugin kullanılmadığı için server'ı ayrı bir terminalde başlat:
-
-```bash
-node rn-network-debugger/packages/server/src/index.js
-```
-
-### Adım 5 — Android port yönlendirme
+### Step 3 — Android port forwarding
 
 ```bash
 adb reverse tcp:8788 tcp:8788
 ```
 
-### Adım 6 — Çalıştır
+### Step 4 — Run
 
 ```bash
-# Terminal 1 — Server (açık kalsın)
-node rn-network-debugger/packages/server/src/index.js
+# Terminal 1 — Server (keep running)
+node node_modules/@onatvaris/rn-network-debugger-server/src/index.js
 
 # Terminal 2 — Expo
 npx expo start
 ```
 
-Tarayıcıda `http://localhost:8788` aç.
+Open `http://localhost:8788` in your browser.
+
+---
+
+## Optional: Cookie Injection
+
+If your app uses [`@react-native-cookies/cookies`](https://github.com/react-native-cookies/cookies),
+the debugger will automatically read stored cookies and inject them into captured requests.
+This is useful for replaying requests with the correct session state.
+
+```bash
+npm install @react-native-cookies/cookies
+```
+
+No additional configuration is needed — cookie injection activates automatically once the package is installed.
 
 ---
 
 ## Android Native HTTP (OkHttp)
 
-> **Opsiyoneldir.** Yalnızca `fetch`/XHR/Axios dışında native seviyede HTTP yapan
-> kütüphanelerin trafiğini de görmek istiyorsan gereklidir.
+> **Optional.** Only needed if you want to capture traffic from libraries that make
+> HTTP requests at the native level, outside of `fetch`/XHR/Axios.
 
-`packages/core/android/` içindeki iki dosyayı Android modülüne kopyala:
+Copy the two files from `packages/core/android/` into your Android module:
 
 ```
 android/app/src/main/java/com/yourapp/
@@ -318,7 +255,7 @@ android/app/src/main/java/com/yourapp/
 └── DebugOkHttpClientFactory.java
 ```
 
-`MainApplication.java`'ya ekle:
+Add to `MainApplication.java`:
 
 ```java
 import com.yourapp.DebugOkHttpClientFactory;
@@ -356,14 +293,14 @@ public class MainApplication extends Application implements ReactApplication {
 
 ## iOS Native HTTP (NSURLProtocol)
 
-> **Opsiyoneldir.** Android OkHttp kurulumunun iOS karşılığı.
+> **Optional.** The iOS equivalent of the Android OkHttp setup.
 
-`packages/core/ios/` içindeki iki dosyayı Xcode projesine ekle:
+Add the two files from `packages/core/ios/` to your Xcode project:
 
-1. Xcode'da projeye sağ tıkla → **Add Files to "YourApp"**
-2. `RNNetworkDebuggerURLProtocol.h` ve `RNNetworkDebuggerURLProtocol.m` dosyalarını seç
+1. Right-click on the project in Xcode → **Add Files to "YourApp"**
+2. Select `RNNetworkDebuggerURLProtocol.h` and `RNNetworkDebuggerURLProtocol.m`
 
-`AppDelegate.mm`'e ekle:
+Add to `AppDelegate.mm`:
 
 ```objc
 #if DEBUG
@@ -382,132 +319,155 @@ public class MainApplication extends Application implements ReactApplication {
   [NSURLProtocol registerClass:[RNNetworkDebuggerURLProtocol class]];
 #endif
 
-  // ... geri kalan kurulum
+  // ... rest of setup
   return YES;
 }
 ```
 
 ---
 
-## DevTools UI Kullanımı
+## DevTools UI Usage
 
-### Bağlantı Durumu
+### Connection Status
 
-Sol üstte küçük bir nokta bulunur:
-- 🟢 **Yeşil** → Server çalışıyor, en az bir uygulama bağlı
-- 🔴 **Kırmızı** → Server'a bağlanılamıyor (Metro açık mı?)
+A small dot appears in the top-left:
+- 🟢 **Green** → Server is running and at least one app is connected
+- 🔴 **Red** → Cannot connect to server (is Metro running?)
 
-### İstek Listesi
+### Request List
 
-Her satırda şunlar görünür:
+Each row shows:
 
-| Sütun | Açıklama |
-|-------|----------|
-| **Durum** | HTTP durum kodu (200, 404, 500…) ya da dönen spinner (bekleyen istek) |
-| **Yöntem** | GET · POST · PUT · DELETE · PATCH · WS |
-| **Tür** | `fetch` · `xhr` · `axios` · `native` · `websocket` |
-| **URL** | İsteğin path + query kısmı (host kısaltılmış) |
-| **Süre** | İstek başından yanıt sonuna kadar geçen süre |
-| **Boyut** | Response body boyutu |
+| Column | Description |
+|--------|-------------|
+| **Status** | HTTP status code (200, 404, 500…) or a spinner for pending requests |
+| **Method** | GET · POST · PUT · DELETE · PATCH · WS |
+| **Type** | `fetch` · `xhr` · `axios` · `native` · `websocket` |
+| **URL** | Path + query portion of the URL (host abbreviated) |
+| **Duration** | Time from request start to response end |
+| **Size** | Response body size |
 
-Bir satıra tıklamak sağ paneli açar.
+Click a row to open the detail panel.
 
-### Detay Paneli
+### Detail Panel
 
-| Sekme | İçerik |
-|-------|--------|
-| **Response** | Yanıt body'si — JSON otomatik formatlanır |
-| **Request** | Gönderilen body — POST/PUT/PATCH için |
-| **Headers** | İstek ve yanıt header'ları ayrı başlıklar altında |
-| **Timing** | Başlangıç/bitiş zamanı, toplam süre, response boyutu |
-| **Messages** | *(yalnızca WebSocket)* Tüm send/receive mesajları zaman damgasıyla |
+| Tab | Content |
+|-----|---------|
+| **Response** | Response body — JSON is auto-formatted |
+| **Request** | Sent body — for POST/PUT/PATCH requests |
+| **Headers** | Request and response headers under separate headings |
+| **Timing** | Start/end time, total duration, response size, platform |
+| **Messages** | *(WebSocket only)* All send/receive messages with timestamps |
 
-### Filtreler
+The **Copy as cURL** button in the detail panel generates a ready-to-run cURL command for the selected request, including headers and cookies.
 
-| Kontrol | İşlev |
-|---------|-------|
-| URL arama kutusu | Anlık filtreleme, büyük/küçük harf duyarsız |
-| Tür seçici | Tüm Türler / fetch / XHR / axios / Native HTTP / WebSocket |
-| Durum seçici | Tüm Durumlar / Başarılı (2xx-3xx) / Hatalı (4xx-5xx+err) / Bekleyen |
-| 🗑 Temizle | Listeyi ve server geçmişini sıfırlar |
+### Cookie Store
+
+Click **🍪 Cookies** in the toolbar to open the Cookie Store panel.
+
+- Cookies are automatically captured from `Set-Cookie` response headers
+- Grouped by platform (Android / iOS) and domain
+- You can view, edit, or delete individual cookies
+- Cookie values are injected into cURL exports automatically
+
+### Color Thresholds
+
+Click **⚡ Thresholds** in the toolbar to define color rules for Duration and Response Size.
+
+- Set a min/max range (e.g. duration ≥ 1000ms → red)
+- Matching rows are highlighted in the request list
+- Rules are persisted in `localStorage`
+
+### Filters
+
+| Control | Function |
+|---------|----------|
+| URL search box | Live filtering, case-insensitive |
+| Type selector | All Types / fetch / XHR / axios / Native HTTP / WebSocket |
+| Status selector | All Statuses / Success (2xx-3xx) / Error (4xx-5xx+err) / Pending |
+| 🗑 Clear | Resets the list and server history |
+
+**Keyboard shortcuts:**
+- `↑` / `↓` — navigate requests
+- `Esc` — close detail panel / Cookie Store / Thresholds
 
 ---
 
-## API Referansı
+## API Reference
 
 ### `startNetworkDebugger(options?)`
 
 ```ts
 startNetworkDebugger({
   /**
-   * DevTools server WebSocket adresi.
-   * Varsayılan: 'ws://localhost:8788'
-   * Android emülatörde: 'ws://10.0.2.2:8788/app'
-   * Fiziksel cihazda: 'ws://192.168.x.x:8788/app'
+   * DevTools server WebSocket address.
+   * Default: 'ws://localhost:8788'
+   * Android emulator: 'ws://10.0.2.2:8788/app'
+   * Physical device: 'ws://192.168.x.x:8788/app'
    */
   serverUrl?: string;
 
   /**
-   * Axios interceptor'ını etkinleştir/devre dışı bırak.
-   * Varsayılan: true
+   * Enable/disable the Axios interceptor.
+   * Default: true
    */
   interceptAxios?: boolean;
 
   /**
-   * WebSocket interceptor'ını etkinleştir/devre dışı bırak.
-   * Varsayılan: true
+   * Enable/disable the WebSocket interceptor.
+   * Default: true
    */
   interceptWS?: boolean;
 
   /**
-   * Bu host'lara yapılan istekler yakalanmaz.
-   * localhost:8788 ve localhost:8081 her zaman hariç tutulur.
+   * Requests to these hosts will not be captured.
+   * localhost:8788 and localhost:8081 are always excluded.
    */
   ignoredHosts?: string[];
 })
-// Dönüş: { stop: () => void }
+// Returns: { stop: () => void }
 ```
 
-**Örnek — seçici yapılandırma:**
+**Example — selective configuration:**
 
 ```js
 if (__DEV__) {
   const debuggerInstance = startNetworkDebugger({
-    serverUrl: 'ws://localhost:8788/app',
-    interceptWS: false,          // WebSocket mesajlarını izleme
+    serverUrl: `ws://localhost:8788/app`,
+    interceptWS: false,          // don't track WebSocket messages
     ignoredHosts: [
-      'sentry.io',               // Sentry trafiğini gizle
-      'analytics.myapp.com',     // Analytics trafiğini gizle
+      'sentry.io',               // hide Sentry traffic
+      'analytics.myapp.com',     // hide analytics traffic
     ],
   });
 
-  // Gerekirse durdur
+  // Stop if needed
   // debuggerInstance.stop();
 }
 ```
 
 ---
 
-## Sorun Giderme
+## Troubleshooting
 
-### ❌ Tarayıcıda "Bağlanıyor…" kalıyor
+### ❌ Browser stuck on "Connecting…"
 
-1. Metro çalışıyor mu?
+1. Is Metro running?
    ```bash
    npx react-native start
    ```
 
-2. Terminalde server başlangıç mesajı görüntülendi mi?
+2. Did you see the server startup message in the terminal?
    ```
    ╔════════════════════════════════════════════╗
    ║  RN Network Debugger Server                ║
    ```
 
-3. Port meşgul olabilir:
+3. Port may be in use:
    ```bash
    lsof -i :8788   # macOS/Linux
    ```
-   Çözüm: farklı port kullan
+   Solution: use a different port
    ```js
    // metro.config.js
    withNetworkDebugger(config, { port: 8789 })
@@ -517,14 +477,14 @@ if (__DEV__) {
 
 ---
 
-### ❌ Android emülatörde istek görünmüyor
+### ❌ No requests appearing on Android emulator
 
 ```bash
 adb reverse tcp:8788 tcp:8788
-adb devices  # cihaz bağlı mı?
+adb devices  # is the device connected?
 ```
 
-`serverUrl`'in `10.0.2.2` kullandığından emin ol:
+Make sure `serverUrl` uses `10.0.2.2`:
 
 ```js
 const host = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
@@ -532,9 +492,9 @@ const host = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 
 ---
 
-### ❌ iOS fiziksel cihazda bağlanamıyor
+### ❌ Cannot connect on iOS physical device
 
-Mac ve cihaz aynı Wi-Fi ağında olmalı. Mac'in IP adresini kullan:
+Mac and device must be on the same Wi-Fi network. Use your Mac's IP address:
 
 ```bash
 ipconfig getifaddr en0   # Mac IP
@@ -546,7 +506,7 @@ startNetworkDebugger({ serverUrl: 'ws://192.168.1.42:8788/app' });
 
 ---
 
-### ❌ Expo Go'da bağlanamıyor
+### ❌ Cannot connect in Expo Go
 
 ```js
 import Constants from 'expo-constants';
@@ -556,34 +516,40 @@ startNetworkDebugger({ serverUrl: `ws://${host}:8788/app` });
 
 ---
 
-### ❌ Bazı istekler görünmüyor
+### ❌ Some requests are not showing
 
-- `startNetworkDebugger` çağrısının tüm import'lardan **önce** geldiğini kontrol et
-- `ignoredHosts` listesinde söz konusu host var mı kontrol et
-- Native HTTP kullanan kütüphaneler için OkHttp/NSURLProtocol kurulumunu tamamla
-
----
-
-### ❌ "Zaten başlatıldı" uyarısı
-
-`startNetworkDebugger` uygulama yaşam döngüsü boyunca yalnızca bir kez çağrılmalı.
-Uyarı görüyorsan birden fazla yerde çağrıldığına işaret eder. `index.js`'te tek bir yerde tut.
+- Verify that `startNetworkDebugger` is called **before** all other imports
+- Check whether the host is in your `ignoredHosts` list
+- For libraries using native HTTP, complete the OkHttp/NSURLProtocol setup
 
 ---
 
-## Sık Sorulan Sorular
+### ❌ "Already initialized" warning
 
-**Production build'de performans etkisi var mı?**  
-Hayır. `if (!__DEV__) return` koruması sayesinde production bundle'a hiçbir interceptor kodu girmez. Metro, `__DEV__ === false` olan dalları tree-shaking ile tamamen çıkarır.
+`startNetworkDebugger` should only be called once during the app's lifecycle.
+If you see this warning, it is being called in multiple places. Keep a single call in `index.js`.
 
-**Birden fazla simülatör/cihaz aynı anda bağlanabilir mi?**  
-Evet. Server çoklu bağlantıyı destekler; tüm cihazlardan gelen istekler aynı panelde görünür.
+---
 
-**UI'ı kapattım, istekler kayboldu mu?**  
-Hayır. Server son 1000 isteği bellekte tutar. UI yeniden açıldığında geçmiş otomatik yüklenir.
+## FAQ
 
-**Axios yüklü değilse ne olur?**  
-`interceptors/axios.js` içindeki `require('axios')` bir `try/catch` içinde. Axios yoksa sessizce atlanır, hata vermez.
+**Does this affect production build performance?**
+No. The `if (!__DEV__) return` guard ensures no interceptor code enters the production bundle. Metro's tree-shaking completely removes branches where `__DEV__ === false`.
 
-**`react-native-nitro-fetch` veya özel fetch implementasyonları yakalanıyor mu?**  
-Yalnızca `global.fetch` ve `global.XMLHttpRequest` kullanan kütüphaneler otomatik yakalanır. Tamamen native ağ katmanı kullananlar için OkHttp (Android) ve NSURLProtocol (iOS) kurulumu gereklidir.
+**Can multiple simulators/devices connect at the same time?**
+Yes. The server supports multiple connections; requests from all devices appear in the same panel.
+
+**I closed the UI — are my requests lost?**
+No. The server keeps the last 1000 requests in memory. History is automatically loaded when the UI reopens.
+
+**What happens if Axios is not installed?**
+The `require('axios')` inside `interceptors/axios.js` is wrapped in a `try/catch`. If Axios is absent, it is silently skipped with no error.
+
+**Are `react-native-nitro-fetch` or custom fetch implementations captured?**
+Only libraries that use `global.fetch` and `global.XMLHttpRequest` are captured automatically. For libraries that use a fully native network layer, OkHttp (Android) and NSURLProtocol (iOS) setup is required.
+
+---
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for local development setup, build instructions, and PR guidelines.

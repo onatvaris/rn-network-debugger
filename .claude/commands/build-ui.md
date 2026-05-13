@@ -1,8 +1,8 @@
 # UI Build
 
-UI'da değişiklik yapıldıktan sonra çalıştır:
+Run after making changes to the UI:
 
 cd packages/ui && npm run build && cp -r dist/* ../server/public/
 
-Ardından Metro'yu yeniden başlat:
+Then restart Metro:
 yarn start --reset-cache

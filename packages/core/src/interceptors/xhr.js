@@ -5,6 +5,8 @@
  * open(), send(), setRequestHeader() metodlarını wrap ederek istekleri yakalarız.
  */
 
+import { getNativeCookies } from '../cookies';
+
 export function interceptXHR(emitter) {
   if (typeof global.XMLHttpRequest === 'undefined') return;
 
@@ -32,16 +34,27 @@ export function interceptXHR(emitter) {
       return originalSetHeader(key, value);
     };
 
-    // send() → istek başlıyor
     const originalSend = xhr.send.bind(xhr);
     xhr.send = function (body) {
       _id = emitter.onRequestStart({
         url: _url,
         method: _method,
-        headers: _requestHeaders,
+        headers: { ..._requestHeaders },
         body,
         type: 'xhr',
       });
+
+      // XHR send() is sync — enrich with cookies async after start
+      const capturedId = _id;
+      const capturedUrl = _url;
+      const capturedHeaders = { ..._requestHeaders };
+      if (!Object.keys(capturedHeaders).some(k => k.toLowerCase() === 'cookie')) {
+        getNativeCookies(capturedUrl).then(cookieStr => {
+          if (cookieStr && capturedId) {
+            emitter.onRequestHeadersUpdate(capturedId, { ...capturedHeaders, cookie: cookieStr });
+          }
+        }).catch(() => {});
+      }
 
       // readystatechange dinle
       xhr.addEventListener('readystatechange', function () {

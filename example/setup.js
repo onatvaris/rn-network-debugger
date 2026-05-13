@@ -1,43 +1,40 @@
 /**
- * Örnek React Native Entegrasyonu
+ * Example React Native Integration
  *
- * Bu dosyayı projenizin index.js veya App.tsx dosyasının
- * EN ÜSTÜNE (tüm import'lardan önce) kopyalayın.
+ * Copy this to the VERY TOP of your project's index.js or App.tsx
+ * (before all other imports).
  */
 
 import { Platform } from 'react-native';
-import { startNetworkDebugger } from '@rn-network-debugger/core';
+import { startNetworkDebugger } from '@onatvaris/rn-network-debugger-core';
 
-// ─── Network Debugger Başlatma ────────────────────────────────────────────────
 if (__DEV__) {
-  // Android emülatörde localhost = host makine için 10.0.2.2 kullanılır
-  // iOS simülatörde ve fiziksel cihaz aynı ağdaysa localhost çalışır
   const debuggerHost =
     Platform.OS === 'android'
-      ? '10.0.2.2'          // Android emülatör
-      : 'localhost';         // iOS simülatör
+      ? '10.0.2.2'   // Android emulator → host machine
+      : 'localhost';  // iOS simulator
 
-  // Fiziksel cihaz kullanıyorsanız:
-  // const debuggerHost = '192.168.1.x'; // Mac'inizin IP adresi
+  // Physical device: use your Mac's IP address instead
+  // const debuggerHost = '192.168.1.x';
 
   startNetworkDebugger({
     serverUrl: `ws://${debuggerHost}:8788/app`,
 
-    // Yakalanmaması gereken host'lar
+    // Hosts to exclude from capture
     ignoredHosts: [
       'sentry.io',
       'analytics.example.com',
     ],
 
-    // Axios interceptor'ı kapat (varsayılan: açık)
+    // Disable Axios interceptor (default: enabled)
     // interceptAxios: false,
 
-    // WebSocket interceptor'ı kapat (varsayılan: açık)
+    // Disable WebSocket interceptor (default: enabled)
     // interceptWS: false,
   });
 }
 
-// ─── Geri kalan app kodu ──────────────────────────────────────────────────────
+// ─── Rest of your app ─────────────────────────────────────────────────────────
 // import { AppRegistry } from 'react-native';
 // import App from './App';
 // AppRegistry.registerComponent('MyApp', () => App);

@@ -1,67 +1,81 @@
 # RN Network Debugger
 
-React Native için fetch/XHR/Axios/WebSocket/OkHttp/NSURLProtocol interceptor'larını
-WebSocket üzerinden tarayıcı tabanlı bir DevTools UI'ına ileten network debugger.
+A network debugger for React Native that forwards fetch/XHR/Axios/WebSocket/OkHttp/NSURLProtocol
+interceptors to a browser-based DevTools UI over WebSocket.
 
-## Paket Yapısı
-- packages/core        → RN interceptor'ları (JS + Android Java + iOS ObjC)
+## Package Structure
+- packages/core        → RN interceptors (JS + Android Java + iOS ObjC)
+  - src/index.js         → startNetworkDebugger() entry point
+  - src/emitter.js       → central event bus (onRequestStart/Done/Error/HeadersUpdate/WSMessage)
+  - src/transport.js     → WebSocket connection + queue
+  - src/cookies.js       → optional @react-native-cookies/cookies integration
+  - src/interceptors/    → fetch, xhr, axios, websocket interceptors
 - packages/server      → WebSocket + HTTP server (ws, express). UI: server/public/
-- packages/metro-plugin → Metro config wrapper, server'ı spawn eder
-- packages/ui          → React + Vite DevTools paneli. Build: npm run build → dist/
+- packages/metro-plugin → Metro config wrapper, spawns the server
+- packages/ui          → React + Vite DevTools panel. Build: npm run build → dist/
 
-## Kritik Kurallar
-- server/public/ klasörü ui/dist/ içeriğinin kopyasıdır. UI değişince tekrar kopyalanmalı.
-- metro-plugin, server'ı packages/server/src/index.js üzerinden spawn eder.
-- core/src/index.js __DEV__ false ise hiçbir şey yapmaz (production güvenli).
-- Android emülatörde host: 10.0.2.2 | iOS simülatörde: localhost
-- WS bağlantı URL'leri: /app (RN tarafı) ve /ui (tarayıcı tarafı)
-- file: link kurulumlarında server/public/ node_modules'a kopyalanmayabilir.
-  Çözüm: cache temizleyerek yeniden kur → yarn install && yarn start --reset-cache
+## Critical Rules
+- server/public/ is a copy of ui/dist/ contents. Must be re-copied after any UI changes.
+- metro-plugin spawns the server via packages/server/src/index.js.
+- core/src/index.js does nothing when __DEV__ is false (production safe).
+- Android emulator host: 10.0.2.2 | iOS simulator: localhost
+- WS connection URLs: /app (RN side) and /ui (browser side)
+- With file: link setups, server/public/ may not be copied into node_modules.
+  Fix: reinstall with cache cleared → yarn install && yarn start --reset-cache
+- cookies.js uses optional require('@react-native-cookies/cookies') — silently skipped if absent.
+- emitter.js has onRequestHeadersUpdate() for async cookie injection in XHR interceptor.
+- UI features: Cookie Store, Color Thresholds, Platform detection (Android/iOS), cURL export.
+- __UI_VERSION__ in App.jsx is injected by vite.config.js from ui/package.json version field.
 
-## Paket Bağımlılıkları
+## Package Dependencies
 - packages/server:       ws, express, cors
 - packages/metro-plugin: ws
 - packages/ui:           react, react-dom, vite, @vitejs/plugin-react
 
-## Sık Yapılan İşlemler
+## Common Operations
 
-### UI build + server'a kopyala
+### Build UI + copy to server
 cd packages/ui && npm run build && cp -r dist/* ../server/public/
 
-### Tüm bağımlılıkları kur
+### Install all dependencies
 cd packages/server && npm install
 cd ../metro-plugin && npm install
 cd ../ui && npm install
 
-### Server'ı test et
+### Test the server
 node packages/server/src/index.js
 
-### Release zip oluştur
+### Create a release zip
 cd packages/ui && npm run build && cp -r dist/* ../server/public/
 cd ../.. && zip -r rn-network-debugger.zip packages/ README.md example/ --exclude "*/node_modules/*"
 
-## Proje Entegrasyon Özeti (Bare RN)
+## npm Package Names
+- @onatvaris/rn-network-debugger-core
+- @onatvaris/rn-network-debugger-server
+- @onatvaris/rn-network-debugger-metro-plugin
+- ui package is internal only (not published)
+- @react-native-cookies/cookies is an optional peer dep of core (cookie injection feature)
 
-### package.json
-"@rn-network-debugger/core": "file:../rn-network-debugger/packages/core",
-"@rn-network-debugger/metro-plugin": "file:../rn-network-debugger/packages/metro-plugin",
-"@rn-network-debugger/server": "file:../rn-network-debugger/packages/server"
+## Project Integration Summary (Bare RN)
+
+### Install
+npm install @onatvaris/rn-network-debugger-core @onatvaris/rn-network-debugger-metro-plugin
 
 ### metro.config.js
 const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
-const { withNetworkDebugger } = require('@rn-network-debugger/metro-plugin');
+const { withNetworkDebugger } = require('@onatvaris/rn-network-debugger-metro-plugin');
 const config = mergeConfig(getDefaultConfig(__dirname), {});
 module.exports = withNetworkDebugger(config, { port: 8788 });
 
-### index.js (en üste)
+### index.js (at the very top)
 import { Platform } from 'react-native';
-import { startNetworkDebugger } from '@rn-network-debugger/core';
+import { startNetworkDebugger } from '@onatvaris/rn-network-debugger-core';
 if (__DEV__) {
   const host = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
   startNetworkDebugger({ serverUrl: `ws://${host}:8788/app` });
 }
 
-## Mimari
+## Architecture
 
 RN App (JS)                     DevTools Server           DevTools UI
 fetch/XHR/Axios/WS  →WS→  localhost:8788  →WS→  http://localhost:8788

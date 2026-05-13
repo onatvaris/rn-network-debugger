@@ -1,9 +1,9 @@
 # Release
 
-1. UI'ı build et ve server'a kopyala:
+1. Build the UI and copy to server:
    cd packages/ui && npm run build && cp -r dist/* ../server/public/
 
-2. Zip oluştur (node_modules hariç):
+2. Create the zip (excluding node_modules):
    cd ../.. && zip -r rn-network-debugger-release.zip \
      packages/core/src \
      packages/core/android \
@@ -23,4 +23,4 @@
      example/ \
      package.json
 
-3. Zip'i paylaş.
+3. Share the zip.

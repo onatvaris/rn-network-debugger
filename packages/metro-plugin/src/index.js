@@ -1,9 +1,7 @@
 /**
- * @rn-network-debugger/metro-plugin
+ * @onatvaris/rn-network-debugger-metro-plugin
  *
- * Metro başladığında DevTools server'ını otomatik başlatır.
- * Server kodu bu pakete gömülüdür — ayrıca @rn-network-debugger/server
- * kurulumu gerekmez.
+ * Automatically starts the DevTools server when Metro launches.
  */
 
 const { spawn } = require('child_process');
@@ -24,19 +22,16 @@ function isPortInUse(port) {
   });
 }
 
-/**
- * Server script'ini bulur. Öncelik sırası:
- * 1. Bu paketin yanındaki gömülü server (en güvenilir)
- * 2. node_modules'daki @rn-network-debugger/server
- * 3. Monorepo / file: link yapısı
- */
 function resolveServerPath() {
+  // npm install: resolve via the declared dependency
+  try {
+    return require.resolve('@onatvaris/rn-network-debugger-server/src/index.js');
+  } catch {}
+
+  // Fallback for monorepo / file: link setups
   const candidates = [
-    // 1. Gömülü server (metro-plugin/server.js — aşağıda oluşturuyoruz)
     path.resolve(__dirname, '..', 'server.js'),
-    // 2. Kardeş paket: node_modules/@rn-network-debugger/server/src/index.js
     path.resolve(__dirname, '..', '..', 'server', 'src', 'index.js'),
-    // 3. Monorepo: packages/server/src/index.js
     path.resolve(__dirname, '..', '..', '..', 'server', 'src', 'index.js'),
   ];
 
@@ -50,14 +45,14 @@ function resolveServerPath() {
 async function startDebuggerServer(port = DEFAULT_PORT) {
   const inUse = await isPortInUse(port);
   if (inUse) {
-    console.log(`[RNNetworkDebugger] Server zaten çalışıyor (port ${port})`);
+    console.log(`[RNNetworkDebugger] Server already running on port ${port}`);
     return;
   }
 
   const serverPath = resolveServerPath();
 
   if (!serverPath) {
-    // Server dosyası bulunamadı — inline olarak başlat
+    // Server file not found — start inline
     startInlineServer(port);
     return;
   }
@@ -69,7 +64,7 @@ async function startDebuggerServer(port = DEFAULT_PORT) {
   });
 
   serverProcess.on('error', (err) => {
-    console.error('[RNNetworkDebugger] Server başlatılamadı, inline moda geçiliyor:', err.message);
+    console.error('[RNNetworkDebugger] Failed to start server, switching to inline mode:', err.message);
     startInlineServer(port);
   });
 
@@ -78,23 +73,16 @@ async function startDebuggerServer(port = DEFAULT_PORT) {
   });
 }
 
-/**
- * Ayrı process yerine mevcut Node process içinde server başlatır.
- * ws modülü yoksa temel HTTP server açar ve uyarı verir.
- */
 function startInlineServer(port) {
   try {
-    // ws modülünü bul (metro'nun node_modules'ında da olabilir)
     const ws = requireWS();
     startWSServer(port, ws);
   } catch (e) {
-    // ws yoksa sadece HTTP server aç, UI'a açıklayıcı mesaj ver
     startFallbackHTTPServer(port);
   }
 }
 
 function requireWS() {
-  // Farklı node_modules konumlarında ws'i ara
   const searchPaths = [
     path.resolve(__dirname, '..', '..', '..', 'node_modules', 'ws'),
     path.resolve(__dirname, '..', 'node_modules', 'ws'),
@@ -103,7 +91,7 @@ function requireWS() {
   for (const p of searchPaths) {
     try { return require(p); } catch {}
   }
-  throw new Error('ws bulunamadı');
+  throw new Error('ws not found');
 }
 
 function startWSServer(port, ws) {
@@ -169,23 +157,20 @@ function startFallbackHTTPServer(port) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(`<html><body style="font-family:monospace;padding:24px;background:#0a0d14;color:#e2e8f0">
       <h2>⚠️ RN Network Debugger</h2>
-      <p>Server başlatıldı fakat <code>ws</code> modülü bulunamadı.</p>
-      <p>Çözüm:</p>
-      <pre style="background:#1f2937;padding:12px;border-radius:6px">cd rn-network-debugger/packages/server
-npm install
-</pre>
-      <p>Sonra Metro'yu yeniden başlat.</p>
+      <p>Server started but the <code>ws</code> module could not be found.</p>
+      <p>Fix:</p>
+      <pre style="background:#1f2937;padding:12px;border-radius:6px">npm install @onatvaris/rn-network-debugger-metro-plugin</pre>
+      <p>Then restart Metro.</p>
     </body></html>`);
   });
   server.listen(port, () => {
-    console.warn(`[RNNetworkDebugger] ⚠️  ws modülü bulunamadı. Lütfen packages/server içinde npm install çalıştır.`);
+    console.warn(`[RNNetworkDebugger] ⚠️  ws module not found. Re-run npm install.`);
   });
 }
 
 function getInlineUI(port) {
-  // UI build edilmemişse basit bir yönlendirme sayfası göster
   return `<!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -208,21 +193,19 @@ function getInlineUI(port) {
 <body>
   <div class="card">
     <h1>⬡ RN Network Debugger</h1>
-    <p>UI henüz build edilmemiş. Aşağıdaki adımı tamamla:</p>
-    <pre>cd rn-network-debugger/packages/ui
-npm install
-npm run build</pre>
-    <p style="margin-top:16px">Build tamamlandıktan sonra bu sayfayı yenile.</p>
-    <div id="status">Bağlanıyor…</div>
+    <p>UI has not been built yet. Please reinstall the package:</p>
+    <pre>npm install @onatvaris/rn-network-debugger-metro-plugin</pre>
+    <p style="margin-top:16px">Then reload this page.</p>
+    <div id="status">Connecting…</div>
   </div>
   <script>
     const ws = new WebSocket('ws://localhost:${port}/ui');
     ws.onopen = () => {
       document.getElementById('status').innerHTML =
-        '<span class="dot"></span>Server bağlı, UI build bekleniyor';
+        '<span class="dot"></span>Server connected, waiting for UI build';
     };
     ws.onclose = () => {
-      document.getElementById('status').textContent = 'Bağlantı kesildi';
+      document.getElementById('status').textContent = 'Disconnected';
     };
   </script>
 </body>

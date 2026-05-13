@@ -6,8 +6,9 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "yarn workspaces run build",
-    "dev:ui": "yarn workspace @rn-network-debugger/ui dev",
-    "dev:server": "yarn workspace @rn-network-debugger/server dev"
+    "build:ui": "cd packages/ui && npm install && npm run build",
+    "dev:ui": "yarn workspace @onatvaris/rn-network-debugger-ui dev",
+    "dev:server": "yarn workspace @onatvaris/rn-network-debugger-server dev",
+    "publish:all": "npm run build:ui && npm publish --workspace packages/core --access public && npm publish --workspace packages/server --access public && npm publish --workspace packages/metro-plugin --access public"
   }
 }

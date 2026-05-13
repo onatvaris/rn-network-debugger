@@ -5,6 +5,8 @@
  * React Native'de fetch, Hermes/JavaScriptCore üzerinde polyfill olarak çalışır.
  */
 
+import { getNativeCookies } from '../cookies';
+
 export function interceptFetch(emitter) {
   if (typeof global.fetch !== 'function') return;
 
@@ -15,6 +17,11 @@ export function interceptFetch(emitter) {
     const method = init.method || (typeof input === 'object' ? input.method : undefined) || 'GET';
     const headers = normalizeHeaders(init.headers || (typeof input === 'object' ? input.headers : {}));
     const body = init.body || (typeof input === 'object' ? input.body : undefined);
+
+    if (!Object.keys(headers).some(k => k.toLowerCase() === 'cookie')) {
+      const cookieStr = await getNativeCookies(url);
+      if (cookieStr) headers['cookie'] = cookieStr;
+    }
 
     const id = emitter.onRequestStart({ url, method, headers, body, type: 'fetch' });
 

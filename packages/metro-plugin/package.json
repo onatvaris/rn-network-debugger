@@ -1,8 +1,28 @@
 {
-  "name": "@rn-network-debugger/metro-plugin",
+  "name": "@onatvaris/rn-network-debugger-metro-plugin",
   "version": "1.0.0",
-  "description": "Metro config wrapper - DevTools server'ı otomatik başlatır",
+  "description": "Metro config wrapper that automatically starts the RN Network Debugger server",
   "main": "src/index.js",
+  "files": [
+    "src/"
+  ],
+  "keywords": [
+    "react-native",
+    "metro",
+    "network",
+    "debugger",
+    "devtools",
+    "plugin"
+  ],
+  "author": "Onat Varis",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onatvaris/rn-network-debugger"
+  },
+  "peerDependencies": {
+    "@onatvaris/rn-network-debugger-server": "^1.0.0"
+  },
   "dependencies": {
     "ws": "^8.16.0"
   }

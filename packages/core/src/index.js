@@ -1,12 +1,12 @@
 /**
- * @rn-network-debugger/core
+ * @onatvaris/rn-network-debugger-core
  *
- * Ana entry point. Tüm interceptor'ları başlatır ve
- * DevTools server'ına WebSocket üzerinden bağlanır.
+ * Main entry point. Initializes all interceptors and connects to the
+ * DevTools server over WebSocket.
  *
- * Kullanım (index.js veya App.tsx'in en üstüne):
- *   import { startNetworkDebugger } from '@rn-network-debugger/core';
- *   if (__DEV__) startNetworkDebugger({ serverUrl: 'ws://localhost:8788' });
+ * Usage (at the very top of index.js or App.tsx):
+ *   import { startNetworkDebugger } from '@onatvaris/rn-network-debugger-core';
+ *   if (__DEV__) startNetworkDebugger({ serverUrl: 'ws://localhost:8788/app' });
  */
 
 import { NetworkEventEmitter } from './emitter';
@@ -20,26 +20,33 @@ let _started = false;
 
 /**
  * @param {object} options
- * @param {string} [options.serverUrl]      - DevTools server WS adresi (varsayılan: ws://localhost:8788)
- * @param {boolean} [options.interceptAxios] - Axios interceptor aktif mi (varsayılan: true)
- * @param {boolean} [options.interceptWS]    - WebSocket interceptor aktif mi (varsayılan: true)
- * @param {string[]} [options.ignoredHosts]  - Yakalanmayacak host listesi
+ * @param {string} [options.serverUrl]       - DevTools server WS address (default: ws://localhost:8788)
+ * @param {boolean} [options.interceptAxios] - Enable Axios interceptor (default: true)
+ * @param {boolean} [options.interceptWS]    - Enable WebSocket interceptor (default: true)
+ * @param {string[]} [options.ignoredHosts]  - Hosts to exclude from capture
  */
 export function startNetworkDebugger(options = {}) {
-  if (!__DEV__) return; // Production'da hiçbir şey yapma
+  if (!__DEV__) return;
   if (_started) {
-    console.warn('[RNNetworkDebugger] Zaten başlatıldı, tekrar çağrılmıyor.');
+    console.warn('[RNNetworkDebugger] Already initialized, skipping duplicate call.');
     return;
   }
   _started = true;
 
+  const serverUrl = options.serverUrl || 'ws://localhost:8788';
+  let serverHost = 'localhost:8788';
+  try { serverHost = new URL(serverUrl).host; } catch {}
+
   const config = {
-    serverUrl: options.serverUrl || 'ws://localhost:8788',
+    serverUrl,
     interceptAxiosEnabled: options.interceptAxios !== false,
     interceptWSEnabled: options.interceptWS !== false,
     ignoredHosts: [
-      'localhost:8788',     // Kendi DevTools server'ımızı yakalamasın
-      'localhost:8081',     // Metro bundler
+      serverHost,
+      'localhost:8788',
+      '10.0.2.2:8788',
+      'localhost:8081',
+      '10.0.2.2:8081',
       ...(options.ignoredHosts || []),
     ],
   };
@@ -47,7 +54,6 @@ export function startNetworkDebugger(options = {}) {
   const emitter = new NetworkEventEmitter(config.ignoredHosts);
   const transport = createWSTransport(config.serverUrl, emitter);
 
-  // JS katmanı interceptor'ları
   interceptFetch(emitter);
   interceptXHR(emitter);
 
@@ -61,7 +67,7 @@ export function startNetworkDebugger(options = {}) {
 
   transport.connect();
 
-  console.log(`[RNNetworkDebugger] Başlatıldı → ${config.serverUrl}`);
+  console.log(`[RNNetworkDebugger] Started → ${config.serverUrl}`);
 
   return {
     stop: () => {

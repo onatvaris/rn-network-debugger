@@ -1,6 +1,6 @@
 {
-  "name": "@rn-network-debugger/ui",
-  "version": "1.0.0",
+  "name": "@onatvaris/rn-network-debugger-ui",
+  "version": "1.0.001",
   "description": "DevTools panel UI",
   "scripts": {
     "dev": "vite",
