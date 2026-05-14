@@ -22,7 +22,7 @@
     "server"
   ],
   "author": "Onat Varis",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/onatvaris/rn-network-debugger"
