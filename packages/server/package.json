@@ -1,6 +1,6 @@
 {
   "name": "@onatvaris/rn-network-debugger-server",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "DevTools WebSocket + HTTP server for RN Network Debugger",
   "main": "src/index.js",
   "scripts": {
