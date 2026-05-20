@@ -35,6 +35,77 @@ app.use(cors());
 app.use(express.json());
 
 app.use(express.static(UI_DIST));
+
+// ─── Replay Endpoint ──────────────────────────────────────────────────────────
+app.post('/api/replay', async (req, res) => {
+  const { method = 'GET', url, headers = {}, body } = req.body || {};
+  if (!url) return res.status(400).json({ error: 'url is required' });
+
+  const startTime = Date.now();
+  try {
+    const isHttps = url.startsWith('https');
+    const transport = isHttps ? require('https') : require('http');
+    const parsedUrl = new URL(url);
+
+    const sanitizedHeaders = {};
+    Object.entries(headers).forEach(([k, v]) => {
+      const lower = k.toLowerCase();
+      if (lower !== 'host' && lower !== 'content-length') {
+        sanitizedHeaders[k] = String(v);
+      }
+    });
+
+    const bodyStr = body != null
+      ? (typeof body === 'string' ? body : JSON.stringify(body))
+      : null;
+
+    if (bodyStr) {
+      sanitizedHeaders['content-length'] = Buffer.byteLength(bodyStr).toString();
+    }
+
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: method.toUpperCase(),
+      headers: sanitizedHeaders,
+    };
+
+    const proxyReq = transport.request(options, (proxyRes) => {
+      const chunks = [];
+      proxyRes.on('data', chunk => chunks.push(chunk));
+      proxyRes.on('end', () => {
+        const rawBody = Buffer.concat(chunks).toString('utf8');
+        let parsedBody;
+        try { parsedBody = JSON.parse(rawBody); } catch { parsedBody = rawBody; }
+
+        const responseHeaders = {};
+        Object.entries(proxyRes.headers).forEach(([k, v]) => {
+          responseHeaders[k] = Array.isArray(v) ? v.join(', ') : v;
+        });
+
+        res.json({
+          status: proxyRes.statusCode,
+          statusText: proxyRes.statusMessage,
+          headers: responseHeaders,
+          body: parsedBody,
+          duration: Date.now() - startTime,
+          size: Buffer.concat(chunks).length,
+        });
+      });
+    });
+
+    proxyReq.on('error', (err) => {
+      res.status(502).json({ error: err.message, duration: Date.now() - startTime });
+    });
+
+    if (bodyStr) proxyReq.write(bodyStr);
+    proxyReq.end();
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(UI_DIST, 'index.html'), (err) => {
     if (err) {
