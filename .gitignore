@@ -4,8 +4,9 @@ node_modules/
 .yarn/unplugged
 .yarn/build-state.yml
 
-# Build output (UI ara çıktısı — server/public/ track edilir)
+# Build output
 packages/ui/dist/
+packages/server/public/
 
 # Logs
 npm-debug.log*
