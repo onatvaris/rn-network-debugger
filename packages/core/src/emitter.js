@@ -7,8 +7,28 @@
 
 let _idCounter = 0;
 
-function generateId() {
-  return `req_${Date.now()}_${++_idCounter}`;
+function generateId(prefix = 'req') {
+  return `${prefix}_${Date.now()}_${++_idCounter}`;
+}
+
+function safeSerialize(value, maxLen = 30000) {
+  const seen = new WeakSet();
+  try {
+    const str = JSON.stringify(value, (key, val) => {
+      if (typeof val === 'object' && val !== null) {
+        if (seen.has(val)) return '[Circular]';
+        seen.add(val);
+      }
+      if (typeof val === 'function') return '[Function]';
+      if (typeof val === 'undefined') return '[undefined]';
+      return val;
+    });
+    if (!str) return null;
+    if (str.length > maxLen) return { _truncated: true, preview: str.slice(0, 2000) + '…' };
+    return JSON.parse(str);
+  } catch {
+    return '[Unserializable]';
+  }
 }
 
 export class NetworkEventEmitter {
@@ -90,6 +110,33 @@ export class NetworkEventEmitter {
 
     this._requests.set(id, updated);
     this._emit('request:error', updated);
+  }
+
+  onConsoleLog(level, args) {
+    const serialized = args.map(arg => {
+      if (arg instanceof Error) return { _type: 'Error', message: arg.message, stack: arg.stack };
+      if (typeof arg === 'object' && arg !== null) return safeSerialize(arg);
+      return arg;
+    });
+    this._emit('console:log', {
+      id: generateId('clog'),
+      level,
+      args: serialized,
+      timestamp: Date.now(),
+    });
+  }
+
+  onReduxAction({ actionType, payload, action, prevState, nextState, duration }) {
+    this._emit('redux:action', {
+      id: generateId('redux'),
+      actionType,
+      payload: safeSerialize(payload),
+      action: safeSerialize(action),
+      prevState: safeSerialize(prevState, Infinity),
+      nextState: safeSerialize(nextState, Infinity),
+      duration,
+      timestamp: Date.now(),
+    });
   }
 
   /**

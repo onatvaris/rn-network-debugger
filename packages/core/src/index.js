@@ -14,9 +14,12 @@ import { interceptFetch } from './interceptors/fetch';
 import { interceptXHR } from './interceptors/xhr';
 import { interceptAxios } from './interceptors/axios';
 import { interceptWebSocket } from './interceptors/websocket';
+import { interceptConsole } from './interceptors/console';
+import { createReduxMiddleware as _createReduxMiddleware } from './interceptors/redux';
 import { createWSTransport } from './transport';
 
 let _started = false;
+let _emitter = null;
 
 /**
  * @param {object} options
@@ -41,6 +44,7 @@ export function startNetworkDebugger(options = {}) {
     serverUrl,
     interceptAxiosEnabled: options.interceptAxios !== false,
     interceptWSEnabled: options.interceptWS !== false,
+    interceptConsoleEnabled: options.interceptConsole === true,
     ignoredHosts: [
       serverHost,
       'localhost:8788',
@@ -52,6 +56,7 @@ export function startNetworkDebugger(options = {}) {
   };
 
   const emitter = new NetworkEventEmitter(config.ignoredHosts);
+  _emitter = emitter;
   const transport = createWSTransport(config.serverUrl, emitter);
 
   interceptFetch(emitter);
@@ -65,6 +70,10 @@ export function startNetworkDebugger(options = {}) {
     interceptWebSocket(emitter);
   }
 
+  if (config.interceptConsoleEnabled) {
+    interceptConsole(emitter);
+  }
+
   transport.connect();
 
   console.log(`[RNNetworkDebugger] Started → ${config.serverUrl}`);
@@ -72,9 +81,14 @@ export function startNetworkDebugger(options = {}) {
   return {
     stop: () => {
       transport.disconnect();
+      _emitter = null;
       _started = false;
     },
   };
 }
 
 export { NetworkEventEmitter };
+
+export function createReduxMiddleware() {
+  return _createReduxMiddleware(_emitter);
+}

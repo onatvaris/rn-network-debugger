@@ -18,6 +18,7 @@ Works with both **Bare React Native** and **Expo** projects. Supports Android an
 - [Android Native HTTP (OkHttp)](#android-native-http-okhttp)
 - [iOS Native HTTP (NSURLProtocol)](#ios-native-http-nsurlprotocol)
 - [DevTools UI Usage](#devtools-ui-usage)
+- [Claude Code MCP Integration](#claude-code-mcp-integration)
 - [API Reference](#api-reference)
 - [Troubleshooting](#troubleshooting)
 - [FAQ](#faq)
@@ -46,11 +47,13 @@ Works with both **Bare React Native** and **Expo** projects. Supports Android an
                               │    Starts automatically with Metro   │
                               └──────────────────┬───────────────────┘
                                                  │ ws://localhost:8788/ui
-                              ┌──────────────────▼───────────────────┐
-                              │           DevTools UI                 │
-                              │       http://localhost:8788           │
-                              │        Open in browser               │
-                              └──────────────────────────────────────┘
+                              ┌──────────────────┴───────────────────┐
+                              │                                       │
+                    ┌─────────▼──────────┐             ┌─────────────▼──────────┐
+                    │    DevTools UI      │             │   Claude Code MCP       │
+                    │  http://localhost   │             │  (stdio transport)      │
+                    │      :8788          │             │  rn-network-debugger-mcp│
+                    └────────────────────┘             └────────────────────────┘
 ```
 
 **Data flow:**
@@ -87,6 +90,7 @@ Works with both **Bare React Native** and **Expo** projects. Supports Android an
 | Multiple devices/simulators | ✅ | Requests from all devices appear in one panel |
 | Zero cost in production | ✅ | No code runs when `__DEV__` is false |
 | Auto-reconnect | ✅ | Retries after 2 seconds on disconnect |
+| Claude Code MCP integration | ✅ | Query and analyze captured requests directly from Claude Code |
 
 ---
 
@@ -390,6 +394,67 @@ Click **⚡ Thresholds** in the toolbar to define color rules for Duration and R
 **Keyboard shortcuts:**
 - `↑` / `↓` — navigate requests
 - `Esc` — close detail panel / Cookie Store / Thresholds
+
+---
+
+## Claude Code MCP Integration
+
+The `@onatvaris/rn-network-debugger-mcp` package exposes an MCP server that connects to the
+running DevTools server and makes all captured network requests available to Claude Code.
+This enables AI-assisted performance analysis, debugging, and request inspection directly from your editor.
+
+### Install
+
+```bash
+npm install -g @onatvaris/rn-network-debugger-mcp
+```
+
+Or use it without installing via `npx` (recommended — see configuration below).
+
+### Configure Claude Code
+
+Add the MCP server to your project's `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "rn-network-debugger": {
+      "command": "npx",
+      "args": ["-y", "@onatvaris/rn-network-debugger-mcp"],
+      "env": {
+        "RN_DEBUGGER_URL": "ws://localhost:8788/ui"
+      }
+    }
+  }
+}
+```
+
+If you use a custom port, update `RN_DEBUGGER_URL` accordingly (e.g. `ws://localhost:8789/ui`).
+
+Restart Claude Code after saving. The MCP server connects to the DevTools server automatically
+and reconnects if the server restarts.
+
+> **Note:** The DevTools server must be running (Metro started) for the MCP to have data.
+> The MCP server itself starts on demand when Claude Code invokes a tool.
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `list_requests` | List captured requests with optional filters: method, status code, URL substring, type, errors only |
+| `get_request` | Full details of a single request — headers, body, response, timing |
+| `analyze_performance` | Latency stats (avg, P50, P95, P99), slowest endpoints, error rates, breakdown by domain and status code |
+| `get_recent_requests` | The N most recently captured requests, newest first |
+
+### Example Prompts
+
+Once connected, you can ask Claude things like:
+
+- *"List all failed requests from the last session"*
+- *"Analyze the performance of requests to /api/products"*
+- *"Show me the response body of the slowest request"*
+- *"How many 401 errors are there and which endpoints triggered them?"*
+- *"Which domain has the highest average response time?"*
 
 ---
 
