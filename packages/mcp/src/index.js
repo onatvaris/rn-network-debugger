@@ -103,6 +103,44 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'list_redux_actions',
+      description: 'List captured Redux actions with optional filters. Returns action type, timestamp, and duration. Full state data is included.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action_type:   { type: 'string', description: 'Filter by action type (partial match)' },
+          limit:         { type: 'number', description: 'Max results to return (default 50)' },
+          since_seconds: { type: 'number', description: 'Only show actions from the last N seconds' },
+        },
+      },
+    },
+    {
+      name: 'get_redux_action',
+      description: 'Get full details of a Redux action including prevState, action payload, and nextState. State objects are fully serialized — use this to inspect Redux state changes in detail.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id:                  { type: 'string',  description: 'Action ID (from list_redux_actions)' },
+          include_prev_state:  { type: 'boolean', description: 'Include prevState in response (default true)' },
+          include_next_state:  { type: 'boolean', description: 'Include nextState in response (default true)' },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'search_redux_actions',
+      description: 'Search Redux action payloads and state for a keyword. Useful for finding which actions affect a specific part of the state.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          keyword:     { type: 'string',  description: 'Text to search for in action type, payload, prevState, or nextState' },
+          action_type: { type: 'string',  description: 'Limit search to action types containing this string' },
+          search_state:{ type: 'boolean', description: 'Also search inside prevState/nextState (default true)' },
+        },
+        required: ['keyword'],
+      },
+    },
+    {
       name: 'export_har',
       description: 'Export captured requests in HAR (HTTP Archive) format. Compatible with Chrome DevTools, Charles, Postman, and other tools.',
       inputSchema: {
@@ -128,6 +166,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     case 'find_duplicates':      return { content: [{ type: 'text', text: findDuplicates(args) }] };
     case 'search_response_bodies': return { content: [{ type: 'text', text: searchResponseBodies(args) }] };
     case 'export_har':           return { content: [{ type: 'text', text: exportHar(args) }] };
+    case 'list_redux_actions':   return { content: [{ type: 'text', text: listReduxActions(args) }] };
+    case 'get_redux_action':     return { content: [{ type: 'text', text: getReduxAction(args) }] };
+    case 'search_redux_actions': return { content: [{ type: 'text', text: searchReduxActions(args) }] };
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -525,6 +566,95 @@ function exportHar({ url_contains, limit = 200 } = {}) {
 
   const json = JSON.stringify(har, null, 2);
   return `HAR export (${entries.length} requests):\n\n\`\`\`json\n${json.length > 50000 ? json.slice(0, 50000) + '\n…(truncated, use url_contains or limit to narrow down)' : json}\n\`\`\``;
+}
+
+// ─── Redux Tool Implementations ───────────────────────────────────────────────
+
+function listReduxActions({ action_type, limit = 50, since_seconds } = {}) {
+  let items = store.getAllReduxActions();
+
+  if (action_type) items = items.filter(a => a.actionType?.toLowerCase().includes(action_type.toLowerCase()));
+  if (since_seconds) {
+    const cutoff = Date.now() - since_seconds * 1000;
+    items = items.filter(a => a.timestamp && a.timestamp >= cutoff);
+  }
+
+  items = items.slice(-limit).reverse();
+
+  if (!items.length) return 'No Redux actions captured yet. Make sure interceptConsole: true is set in startNetworkDebugger().';
+
+  const rows = items.map(a => {
+    const time = a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : '';
+    const dur = a.duration != null ? `${a.duration}ms` : '   —';
+    return `[${a.id}] ${time}  ${dur.padStart(6)}  ${a.actionType}`;
+  });
+
+  return `Captured Redux actions (${items.length}):\n\n` + rows.join('\n');
+}
+
+function getReduxAction({ id, include_prev_state = true, include_next_state = true } = {}) {
+  const a = store.getReduxActionById(id);
+  if (!a) return `Redux action "${id}" not found.`;
+
+  const fmt = (val) => {
+    if (val == null) return '(none)';
+    if (val?._truncated) return `[TRUNCATED]\n${val.preview}`;
+    try { return JSON.stringify(val); } catch { return String(val); }
+  };
+
+  const lines = [
+    `ID:          ${a.id}`,
+    `Action Type: ${a.actionType}`,
+    `Timestamp:   ${a.timestamp ? new Date(a.timestamp).toISOString() : 'N/A'}`,
+    `Duration:    ${a.duration != null ? a.duration + 'ms' : 'N/A (via redux-logger)'}`,
+    '',
+    '── Action ───────────────────────────────────────────────',
+    fmt(a.action ?? a.payload),
+  ];
+
+  if (include_prev_state) {
+    lines.push('', '── Prev State ───────────────────────────────────────────', fmt(a.prevState));
+  }
+  if (include_next_state) {
+    lines.push('', '── Next State ───────────────────────────────────────────', fmt(a.nextState));
+  }
+
+  return lines.join('\n');
+}
+
+function searchReduxActions({ keyword, action_type, search_state = true } = {}) {
+  if (!keyword) return 'keyword is required.';
+
+  let items = store.getAllReduxActions();
+  if (action_type) items = items.filter(a => a.actionType?.toLowerCase().includes(action_type.toLowerCase()));
+
+  const needle = keyword.toLowerCase();
+
+  const matches = items.filter(a => {
+    if (a.actionType?.toLowerCase().includes(needle)) return true;
+    try {
+      const payloadStr = JSON.stringify(a.action ?? a.payload ?? '').toLowerCase();
+      if (payloadStr.includes(needle)) return true;
+    } catch {}
+    if (search_state) {
+      try {
+        if (JSON.stringify(a.prevState ?? '').toLowerCase().includes(needle)) return true;
+        if (JSON.stringify(a.nextState ?? '').toLowerCase().includes(needle)) return true;
+      } catch {}
+    }
+    return false;
+  });
+
+  if (!matches.length) return `No Redux actions found containing "${keyword}".`;
+
+  const lines = [`Found "${keyword}" in ${matches.length} Redux action(s):\n`];
+  matches.slice(-50).reverse().forEach(a => {
+    const time = a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : '';
+    lines.push(`  [${a.id}] ${time}  ${a.actionType}`);
+  });
+  lines.push(`\nUse get_redux_action with an ID to see full state details.`);
+
+  return lines.join('\n');
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
