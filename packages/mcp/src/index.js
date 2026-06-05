@@ -104,7 +104,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'list_redux_actions',
-      description: 'List captured Redux actions with optional filters. Returns action type, timestamp, and duration. Full state data is included.',
+      description: 'List captured Redux actions with optional filters. Returns action type, timestamp, and duration. Also shows top-level Redux state slice names to help with state_paths in get_redux_action.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -116,13 +116,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'get_redux_action',
-      description: 'Get full details of a Redux action including prevState, action payload, and nextState. State objects are fully serialized — use this to inspect Redux state changes in detail.',
+      description: 'Get details of a Redux action. By default returns only the changed state keys (diff mode). Use state_paths to inspect specific slices fully, or include_prev_state/include_next_state for the full dump.',
       inputSchema: {
         type: 'object',
         properties: {
-          id:                  { type: 'string',  description: 'Action ID (from list_redux_actions)' },
-          include_prev_state:  { type: 'boolean', description: 'Include prevState in response (default true)' },
-          include_next_state:  { type: 'boolean', description: 'Include nextState in response (default true)' },
+          id:                  { type: 'string',   description: 'Action ID (from list_redux_actions)' },
+          state_paths:         { type: 'array', items: { type: 'string' }, description: 'Dot-paths to return fully, e.g. ["auth", "basket.items"]. Overrides diff mode.' },
+          include_diff:        { type: 'boolean',  description: 'Show only changed state keys (default true when no state_paths given)' },
+          include_prev_state:  { type: 'boolean',  description: 'Include full prevState dump (default false)' },
+          include_next_state:  { type: 'boolean',  description: 'Include full nextState dump (default false)' },
+          max_chars:           { type: 'number',   description: 'Hard cap on response characters (default 25000)' },
         },
         required: ['id'],
       },
@@ -581,7 +584,7 @@ function listReduxActions({ action_type, limit = 50, since_seconds } = {}) {
 
   items = items.slice(-limit).reverse();
 
-  if (!items.length) return 'No Redux actions captured yet. Make sure interceptConsole: true is set in startNetworkDebugger().';
+  if (!items.length) return 'No Redux actions captured yet. Make sure createReduxMiddleware() is wired up in your store.';
 
   const rows = items.map(a => {
     const time = a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : '';
@@ -589,37 +592,83 @@ function listReduxActions({ action_type, limit = 50, since_seconds } = {}) {
     return `[${a.id}] ${time}  ${dur.padStart(6)}  ${a.actionType}`;
   });
 
-  return `Captured Redux actions (${items.length}):\n\n` + rows.join('\n');
+  const lines = [`Captured Redux actions (${items.length}):\n`, ...rows];
+
+  // Append top-level state slice names from the most recent action for schema discovery
+  const latest = store.getAllReduxActions().at(-1);
+  const stateKeys = latest?.nextState ? Object.keys(latest.nextState) : (latest?.prevState ? Object.keys(latest.prevState) : []);
+  if (stateKeys.length) {
+    lines.push(`\nTop-level state slices: ${stateKeys.join(', ')}`);
+    lines.push('Use get_redux_action with state_paths e.g. ["auth"] to inspect a specific slice.');
+  }
+
+  return lines.join('\n');
 }
 
-function getReduxAction({ id, include_prev_state = true, include_next_state = true } = {}) {
+function getReduxAction({ id, state_paths, include_diff, include_prev_state = false, include_next_state = false, max_chars = 25000 } = {}) {
   const a = store.getReduxActionById(id);
   if (!a) return `Redux action "${id}" not found.`;
 
   const fmt = (val) => {
     if (val == null) return '(none)';
     if (val?._truncated) return `[TRUNCATED]\n${val.preview}`;
-    try { return JSON.stringify(val); } catch { return String(val); }
+    try { return JSON.stringify(val, null, 2); } catch { return String(val); }
+  };
+
+  const getPath = (obj, path) => {
+    return path.split('.').reduce((cur, key) => cur?.[key], obj);
   };
 
   const lines = [
     `ID:          ${a.id}`,
     `Action Type: ${a.actionType}`,
     `Timestamp:   ${a.timestamp ? new Date(a.timestamp).toISOString() : 'N/A'}`,
-    `Duration:    ${a.duration != null ? a.duration + 'ms' : 'N/A (via redux-logger)'}`,
+    `Duration:    ${a.duration != null ? a.duration + 'ms' : 'N/A'}`,
     '',
-    '── Action ───────────────────────────────────────────────',
+    '── Action Payload ───────────────────────────────────────',
     fmt(a.action ?? a.payload),
   ];
 
-  if (include_prev_state) {
-    lines.push('', '── Prev State ───────────────────────────────────────────', fmt(a.prevState));
-  }
-  if (include_next_state) {
-    lines.push('', '── Next State ───────────────────────────────────────────', fmt(a.nextState));
+  if (state_paths && state_paths.length > 0) {
+    // state_paths mode: return specific slices in full
+    lines.push('', '── State Slices (state_paths) ────────────────────────────');
+    state_paths.forEach(p => {
+      const before = getPath(a.prevState, p);
+      const after  = getPath(a.nextState, p);
+      lines.push(`\n[${p}]`);
+      lines.push(`  before: ${fmt(before)}`);
+      lines.push(`  after:  ${fmt(after)}`);
+    });
+  } else if (include_diff !== false && !include_prev_state && !include_next_state) {
+    // diff mode (default): only changed top-level keys
+    const diff = diffState(a.prevState, a.nextState);
+    const changedKeys = Object.keys(diff);
+    if (changedKeys.length === 0) {
+      lines.push('', '── State Diff ────────────────────────────────────────────', '  (no state changes)');
+    } else {
+      lines.push('', '── State Diff (changed keys only) ───────────────────────');
+      changedKeys.forEach(k => {
+        lines.push(`\n[${k}]`);
+        lines.push(`  before: ${fmt(diff[k].before)}`);
+        lines.push(`  after:  ${fmt(diff[k].after)}`);
+      });
+      lines.push(`\nUnchanged slices omitted. Use state_paths=["<key>"] to inspect a slice fully.`);
+    }
+  } else {
+    // explicit full dump
+    if (include_prev_state) {
+      lines.push('', '── Prev State ───────────────────────────────────────────', fmt(a.prevState));
+    }
+    if (include_next_state) {
+      lines.push('', '── Next State ───────────────────────────────────────────', fmt(a.nextState));
+    }
   }
 
-  return lines.join('\n');
+  let result = lines.join('\n');
+  if (result.length > max_chars) {
+    result = result.slice(0, max_chars) + `\n\n[...truncated at ${max_chars} chars. Use state_paths=["<slice>"] to inspect specific slices.]`;
+  }
+  return result;
 }
 
 function searchReduxActions({ keyword, action_type, search_state = true } = {}) {
@@ -658,6 +707,40 @@ function searchReduxActions({ keyword, action_type, search_state = true } = {}) 
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== 'object') return false;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
+function shallowPreview(val) {
+  if (val === null || val === undefined) return val;
+  if (typeof val !== 'object') return val;
+  try {
+    const str = JSON.stringify(val);
+    return str.length > 300 ? str.slice(0, 300) + '…' : val;
+  } catch {
+    return String(val);
+  }
+}
+
+function diffState(prev, next) {
+  const changed = {};
+  const allKeys = new Set([...Object.keys(prev ?? {}), ...Object.keys(next ?? {})]);
+  for (const k of allKeys) {
+    if (!deepEqual(prev?.[k], next?.[k])) {
+      changed[k] = { before: shallowPreview(prev?.[k]), after: shallowPreview(next?.[k]) };
+    }
+  }
+  return changed;
+}
 
 function truncate(str, max) {
   if (!str) return '';

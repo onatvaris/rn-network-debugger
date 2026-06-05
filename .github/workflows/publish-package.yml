@@ -1,0 +1,97 @@
+name: Publish single package to npm
+
+on:
+  push:
+    tags:
+      - 'core-v*.*.*'
+      - 'server-v*.*.*'
+      - 'metro-plugin-v*.*.*'
+      - 'mcp-v*.*.*'
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Parse tag
+        id: parse
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          if [[ ! "$TAG" =~ ^(core|server|metro-plugin|mcp)-v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$ ]]; then
+            echo "Invalid tag format: $TAG (expected <pkg>-v<semver>)"
+            exit 1
+          fi
+          PKG="${TAG%-v*}"
+          VERSION="${TAG##*-v}"
+          echo "PKG=$PKG"         >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          if [[ "$VERSION" == *-* ]]; then
+            echo "NPM_TAG=next"   >> $GITHUB_ENV
+          else
+            echo "NPM_TAG=latest" >> $GITHUB_ENV
+          fi
+
+      - name: Verify package.json version matches tag
+        run: |
+          PKG_VERSION=$(node -p "require('./packages/$PKG/package.json').version")
+          if [ "$PKG_VERSION" != "$VERSION" ]; then
+            echo "Version mismatch: tag=$VERSION but packages/$PKG/package.json=$PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Build UI (server only)
+        if: env.PKG == 'server'
+        run: |
+          cd packages/ui && npm install && npm run build
+          test -f ../server/public/index.html || (echo "UI build missing index.html" && exit 1)
+
+      - name: Install package deps
+        run: cd packages/$PKG && npm install
+
+      - name: Smoke test (core)
+        if: env.PKG == 'core'
+        run: node -e "globalThis.__DEV__=false; require('./packages/core/src/index.js')"
+
+      - name: Smoke test (server)
+        if: env.PKG == 'server'
+        run: |
+          node packages/server/src/index.js &
+          PID=$!
+          sleep 3
+          kill $PID || true
+
+      - name: Dry-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: cd packages/$PKG && npm publish --dry-run --access public --ignore-scripts
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          EXTRA_FLAGS=""
+          if [ "$PKG" = "server" ]; then EXTRA_FLAGS="--ignore-scripts"; fi
+          cd packages/$PKG && npm publish --access public --provenance --tag $NPM_TAG $EXTRA_FLAGS
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          name: ${{ env.PKG }} v${{ env.VERSION }}
+          prerelease: ${{ contains(env.VERSION, '-') }}

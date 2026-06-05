@@ -1,9 +1,11 @@
 name: Publish to npm
 
+# Tüm paketleri aynı versiyonla birlikte publish eder (major/koordineli release'ler için).
+# Tek paket publish için: publish-package.yml (mcp-v1.3.0, core-v1.2.0 vb. tag'ler)
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'release-v*.*.*'
 
 concurrency:
   group: publish-${{ github.ref }}
