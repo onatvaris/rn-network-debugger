@@ -51,10 +51,8 @@ jobs:
       - name: Build UI
         run: cd packages/ui && npm run build
 
-      - name: Copy UI dist to server/public
+      - name: Verify UI build output
         run: |
-          rm -rf packages/server/public/*
-          cp -r packages/ui/dist/* packages/server/public/
           test -f packages/server/public/index.html || (echo "UI build missing index.html" && exit 1)
 
       - name: Install publishable packages

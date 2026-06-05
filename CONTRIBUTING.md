@@ -23,7 +23,7 @@ rn-network-debugger/
 │   │
 │   ├── server/                      # DevTools WebSocket + HTTP server — published to npm
 │   │   ├── src/index.js             # Express + ws, port 8788
-│   │   └── public/                  # Built UI (copy of ui/dist — do not edit directly)
+│   │   └── public/                  # Built UI (vite writes here directly — do not edit directly)
 │   │
 │   ├── metro-plugin/                # Metro config wrapper — published to npm
 │   │   └── src/index.js             # withNetworkDebugger(), starts server automatically

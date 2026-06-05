@@ -6,5 +6,5 @@ Analyze the given error:
 2. Examine the error message and stack trace
 3. Fix the relevant file
 4. If packages/ui was changed, remind:
-   cd packages/ui && npm run build && cp -r dist/* ../server/public/
+   cd packages/ui && npm run build
 5. If Metro cache needs clearing: yarn start --reset-cache

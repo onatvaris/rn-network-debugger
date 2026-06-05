@@ -12,10 +12,10 @@ interceptors to a browser-based DevTools UI over WebSocket.
   - src/interceptors/    → fetch, xhr, axios, websocket interceptors
 - packages/server      → WebSocket + HTTP server (ws, express). UI: server/public/
 - packages/metro-plugin → Metro config wrapper, spawns the server
-- packages/ui          → React + Vite DevTools panel. Build: npm run build → dist/
+- packages/ui          → React + Vite DevTools panel. Build: npm run build → ../server/public/ (vite outDir)
 
 ## Critical Rules
-- server/public/ is a copy of ui/dist/ contents. Must be re-copied after any UI changes.
+- ui/vite.config.js writes build output directly to ../server/public/ (emptyOutDir: true clears stale files). No separate copy step needed.
 - metro-plugin spawns the server via packages/server/src/index.js.
 - core/src/index.js does nothing when __DEV__ is false (production safe).
 - Android emulator host: 10.0.2.2 | iOS simulator: localhost
@@ -34,8 +34,8 @@ interceptors to a browser-based DevTools UI over WebSocket.
 
 ## Common Operations
 
-### Build UI + copy to server
-cd packages/ui && npm run build && cp -r dist/* ../server/public/
+### Build UI (writes directly to server/public/)
+cd packages/ui && npm run build
 
 ### Install all dependencies
 cd packages/server && npm install
@@ -46,7 +46,7 @@ cd ../ui && npm install
 node packages/server/src/index.js
 
 ### Create a release zip
-cd packages/ui && npm run build && cp -r dist/* ../server/public/
+cd packages/ui && npm run build
 cd ../.. && zip -r rn-network-debugger.zip packages/ README.md example/ --exclude "*/node_modules/*"
 
 ## npm Package Names
