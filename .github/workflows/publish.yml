@@ -41,7 +41,7 @@ jobs:
 
       - name: Sync versions (before UI build)
         run: |
-          for pkg in core server metro-plugin ui; do
+          for pkg in core server metro-plugin mcp ui; do
             (cd packages/$pkg && npm version "$VERSION" --no-git-tag-version --allow-same-version)
           done
 
@@ -59,7 +59,7 @@ jobs:
 
       - name: Install publishable packages
         run: |
-          for pkg in core server metro-plugin; do
+          for pkg in core server metro-plugin mcp; do
             (cd packages/$pkg && npm install)
           done
 
@@ -75,7 +75,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for pkg in core server metro-plugin; do
+          for pkg in core server metro-plugin mcp; do
             echo "--- Dry-run: $pkg ---"
             (cd packages/$pkg && npm publish --dry-run --access public --ignore-scripts)
           done
@@ -94,6 +94,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: cd packages/metro-plugin && npm publish --access public --provenance --tag $NPM_TAG
+
+      - name: Publish mcp
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: cd packages/mcp && npm publish --access public --provenance --tag $NPM_TAG
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
