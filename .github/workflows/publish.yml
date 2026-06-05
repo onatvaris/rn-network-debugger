@@ -63,7 +63,7 @@ jobs:
 
       - name: Smoke test
         run: |
-          node -e "require('./packages/core/src/index.js')"
+          node -e "globalThis.__DEV__=false; require('./packages/core/src/index.js')"
           node packages/server/src/index.js &
           SERVER_PID=$!
           sleep 3

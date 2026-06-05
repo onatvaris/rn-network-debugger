@@ -9,14 +9,14 @@
  *   if (__DEV__) startNetworkDebugger({ serverUrl: 'ws://localhost:8788/app' });
  */
 
-import { NetworkEventEmitter } from './emitter';
-import { interceptFetch } from './interceptors/fetch';
-import { interceptXHR } from './interceptors/xhr';
-import { interceptAxios } from './interceptors/axios';
-import { interceptWebSocket } from './interceptors/websocket';
-import { interceptConsole } from './interceptors/console';
-import { createReduxMiddleware as _createReduxMiddleware } from './interceptors/redux';
-import { createWSTransport } from './transport';
+import { NetworkEventEmitter } from './emitter.js';
+import { interceptFetch } from './interceptors/fetch.js';
+import { interceptXHR } from './interceptors/xhr.js';
+import { interceptAxios } from './interceptors/axios.js';
+import { interceptWebSocket } from './interceptors/websocket.js';
+import { interceptConsole } from './interceptors/console.js';
+import { createReduxMiddleware as _createReduxMiddleware } from './interceptors/redux.js';
+import { createWSTransport } from './transport.js';
 
 let _started = false;
 let _emitter = null;

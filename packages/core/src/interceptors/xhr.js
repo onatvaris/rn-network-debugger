@@ -5,7 +5,7 @@
  * open(), send(), setRequestHeader() metodlarını wrap ederek istekleri yakalarız.
  */
 
-import { getNativeCookies } from '../cookies';
+import { getNativeCookies } from '../cookies.js';
 
 export function interceptXHR(emitter) {
   if (typeof global.XMLHttpRequest === 'undefined') return;
