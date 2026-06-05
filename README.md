@@ -19,6 +19,7 @@ Works with both **Bare React Native** and **Expo** projects. Supports Android an
 - [iOS Native HTTP (NSURLProtocol)](#ios-native-http-nsurlprotocol)
 - [DevTools UI Usage](#devtools-ui-usage)
 - [Claude Code MCP Integration](#claude-code-mcp-integration)
+- [Redux Middleware](#createreduxmiddleware)
 - [API Reference](#api-reference)
 - [Troubleshooting](#troubleshooting)
 - [FAQ](#faq)
@@ -74,6 +75,8 @@ Works with both **Bare React Native** and **Expo** projects. Supports Android an
 | `WebSocket` interception | ✅ | Includes send/receive message history |
 | Android Native HTTP (OkHttp) | ✅ | Additional setup required → [see](#android-native-http-okhttp) |
 | iOS Native HTTP (NSURLProtocol) | ✅ | Additional setup required → [see](#ios-native-http-nsurlprotocol) |
+| Console log interception | ✅ | Opt-in via `interceptConsole: true` — forwards `console.log/warn/error` to DevTools |
+| Redux action capture | ✅ | Opt-in via `createReduxMiddleware()` — records actions and state diffs |
 | Cookie Store | ✅ | Captures Set-Cookie headers; view, edit, and delete by platform/domain |
 | Cookie injection | ✅ | Auto-injects cookies into requests (requires `@react-native-cookies/cookies`) |
 | Platform detection | ✅ | Android / iOS badge per request (via User-Agent / `x-app-device` header) |
@@ -441,10 +444,17 @@ and reconnects if the server restarts.
 
 | Tool | Description |
 |------|-------------|
-| `list_requests` | List captured requests with optional filters: method, status code, URL substring, type, errors only |
+| `server_status` | Connection state, number of captured requests, and connected app count |
+| `list_requests` | List captured requests with optional filters: method, status code, URL substring, type, duration range, errors only |
 | `get_request` | Full details of a single request — headers, body, response, timing |
-| `analyze_performance` | Latency stats (avg, P50, P95, P99), slowest endpoints, error rates, breakdown by domain and status code |
 | `get_recent_requests` | The N most recently captured requests, newest first |
+| `analyze_performance` | Latency stats (avg, P50, P95, P99), slowest endpoints, error rates, breakdown by domain and status code |
+| `find_duplicates` | Find duplicate/repeated requests — same URL called multiple times, useful for detecting redundant API calls |
+| `search_response_bodies` | Search across all captured response bodies for a keyword or field name |
+| `export_har` | Export captured requests as a HAR file compatible with Chrome DevTools, Postman, and Charles |
+| `list_redux_actions` | List captured Redux actions; also shows top-level state slice names for use with `get_redux_action` |
+| `get_redux_action` | Get details of a Redux action. Defaults to diff mode (only changed state keys). Supports `state_paths`, `include_prev_state`, `include_next_state`, and `max_chars` |
+| `search_redux_actions` | Search Redux action types, payloads, and state for a keyword |
 
 ### Example Prompts
 
@@ -455,6 +465,12 @@ Once connected, you can ask Claude things like:
 - *"Show me the response body of the slowest request"*
 - *"How many 401 errors are there and which endpoints triggered them?"*
 - *"Which domain has the highest average response time?"*
+- *"Are there any duplicate API calls being made?"*
+- *"Which response bodies contain the field 'access_token'?"*
+- *"Export all requests as HAR so I can open them in Chrome DevTools"*
+- *"List the last 20 Redux actions and show me which state slices they touched"*
+- *"Show the state diff for the last AUTH_SUCCESS action"*
+- *"Which Redux actions changed the basket slice?"*
 
 ---
 
@@ -485,6 +501,12 @@ startNetworkDebugger({
   interceptWS?: boolean;
 
   /**
+   * Forward console.log / console.warn / console.error to DevTools.
+   * Default: false
+   */
+  interceptConsole?: boolean;
+
+  /**
    * Requests to these hosts will not be captured.
    * localhost:8788 and localhost:8081 are always excluded.
    */
@@ -500,6 +522,7 @@ if (__DEV__) {
   const debuggerInstance = startNetworkDebugger({
     serverUrl: `ws://localhost:8788/app`,
     interceptWS: false,          // don't track WebSocket messages
+    interceptConsole: true,      // forward console.log/warn/error to DevTools
     ignoredHosts: [
       'sentry.io',               // hide Sentry traffic
       'analytics.myapp.com',     // hide analytics traffic
@@ -510,6 +533,29 @@ if (__DEV__) {
   // debuggerInstance.stop();
 }
 ```
+
+---
+
+### `createReduxMiddleware()`
+
+Captures Redux actions and state snapshots (before/after each action) and forwards them to the DevTools server. Requires `startNetworkDebugger()` to be called first.
+
+```js
+import { createReduxMiddleware } from '@onatvaris/rn-network-debugger-core';
+import { configureStore } from '@reduxjs/toolkit';
+
+export const store = configureStore({
+  reducer: rootReducer,
+  middleware: (getDefaultMiddleware) =>
+    __DEV__
+      ? getDefaultMiddleware().concat(createReduxMiddleware())
+      : getDefaultMiddleware(),
+});
+```
+
+Once wired up, Redux actions are available in the MCP tools `list_redux_actions`, `get_redux_action`, and `search_redux_actions`.
+
+> **Note:** `createReduxMiddleware()` must be called **after** `startNetworkDebugger()`, otherwise actions will not be forwarded.
 
 ---
 
