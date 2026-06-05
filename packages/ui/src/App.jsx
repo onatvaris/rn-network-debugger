@@ -89,6 +89,7 @@ function useDebuggerConnection() {
   const [connected, setConnected] = useState(false);
   const [connectedApps, setConnectedApps] = useState(0);
   const [cookieStore, setCookieStore] = useState({});
+  const [logs, setLogs] = useState([]);
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
 
@@ -101,14 +102,30 @@ function useDebuggerConnection() {
         const msg = JSON.parse(e.data);
         if (msg.event === 'history') {
           const reqs = {};
-          msg.data.forEach(item => processMessage(item, reqs));
+          const historyLogs = [];
+          msg.data.forEach(item => {
+            if (item.event === 'console:log' || item.event === 'redux:action') {
+              historyLogs.push({ kind: item.event === 'console:log' ? 'console' : 'redux', ...item.data });
+            } else {
+              processMessage(item, reqs);
+            }
+          });
           const sorted = Object.values(reqs).sort((a, b) => a.startTime - b.startTime);
           setRequests(sorted);
           sorted.forEach(req => extractSetCookies(req, setCookieStore));
+          if (historyLogs.length) setLogs(historyLogs);
           return;
         }
-        if (msg.event === 'history_cleared') { setRequests([]); return; }
+        if (msg.event === 'history_cleared') { setRequests([]); setLogs([]); return; }
         if (msg.event === 'server:status') { setConnectedApps(msg.data.connectedApps); return; }
+        if (msg.event === 'console:log') {
+          setLogs(prev => [...prev.slice(-999), { kind: 'console', ...msg.data }]);
+          return;
+        }
+        if (msg.event === 'redux:action') {
+          setLogs(prev => [...prev.slice(-999), { kind: 'redux', ...msg.data }]);
+          return;
+        }
         if (msg.event === 'request:done') extractSetCookies(msg.data, setCookieStore);
         setRequests(prev => {
           const map = {};
@@ -133,9 +150,10 @@ function useDebuggerConnection() {
   const clearAll = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: 'clear_history' }));
     setRequests([]);
+    setLogs([]);
   }, []);
 
-  return { requests, connected, connectedApps, cookieStore, setCookieStore, clearAll };
+  return { requests, connected, connectedApps, cookieStore, setCookieStore, logs, clearAll };
 }
 
 function processMessage(msg, map) {
@@ -801,6 +819,346 @@ function RequestDetail({ req, onClose, cookieStore }) {
   );
 }
 
+// ─── Logs Panel ──────────────────────────────────────────────────────────────
+
+const LEVEL_COLORS = { log: '#9ca3af', warn: '#f59e0b', error: '#ef4444', info: '#60a5fa' };
+const LEVEL_BG = { log: '#1f2937', warn: '#2d1f00', error: '#2d0a0a', info: '#0a1a2d' };
+
+function ArgView({ arg }) {
+  if (arg === null) return <span style={{ color: '#6b7280' }}>null</span>;
+  if (arg === undefined || arg === '[undefined]') return <span style={{ color: '#6b7280' }}>undefined</span>;
+  if (typeof arg === 'boolean') return <span style={{ color: '#a78bfa' }}>{String(arg)}</span>;
+  if (typeof arg === 'number') return <span style={{ color: '#34d399' }}>{arg}</span>;
+  if (typeof arg === 'string') return <span style={{ color: '#d1d5db' }}>{arg}</span>;
+  if (arg?._type === 'Error') return (
+    <span style={{ color: '#ef4444', fontFamily: 'monospace', fontSize: 11 }}>
+      Error: {arg.message}
+    </span>
+  );
+  if (arg?._truncated) return (
+    <div style={{ width: '100%' }}>
+      <div style={{ fontSize: 10, color: '#f59e0b', fontFamily: 'monospace', marginBottom: 4 }}>[truncated]</div>
+      <pre style={{ margin: 0, color: '#9ca3af', fontFamily: 'monospace', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{formatTruncatedJson(arg.preview)}</pre>
+    </div>
+  );
+  if (typeof arg === 'object') {
+    let pretty;
+    try { pretty = JSON.stringify(arg, null, 2); } catch { pretty = String(arg); }
+    return (
+      <pre style={{ margin: 0, color: '#d1d5db', fontFamily: 'monospace', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+        {pretty}
+      </pre>
+    );
+  }
+  return <span style={{ color: '#d1d5db' }}>{String(arg)}</span>;
+}
+
+function formatTruncatedJson(str) {
+  const raw = str.replace(/…$/, '');
+  try { return JSON.stringify(JSON.parse(raw), null, 2); } catch {}
+  let out = '', depth = 0, inStr = false, esc = false;
+  for (const c of raw) {
+    if (esc) { out += c; esc = false; continue; }
+    if (c === '\\' && inStr) { out += c; esc = true; continue; }
+    if (c === '"') { inStr = !inStr; out += c; continue; }
+    if (inStr) { out += c; continue; }
+    if (c === '{' || c === '[') { out += c + '\n' + '  '.repeat(++depth); }
+    else if (c === '}' || c === ']') { out += '\n' + '  '.repeat(Math.max(0, --depth)) + c; }
+    else if (c === ',') { out += c + '\n' + '  '.repeat(depth); }
+    else if (c === ':') { out += c + ' '; }
+    else { out += c; }
+  }
+  return out + '…';
+}
+
+function valuePreview(value) {
+  if (value === null || value === undefined || value === '[undefined]') return { text: 'null', color: '#6b7280' };
+  if (value?._truncated) return { text: '[truncated]', color: '#f59e0b' };
+  if (typeof value === 'boolean') return { text: String(value), color: '#a78bfa' };
+  if (typeof value === 'number') return { text: String(value), color: '#34d399' };
+  if (typeof value === 'string') {
+    const s = value.length > 60 ? value.slice(0, 60) + '…' : value;
+    return { text: `"${s}"`, color: '#fbbf24' };
+  }
+  if (Array.isArray(value)) return { text: `Array(${value.length})`, color: '#9ca3af' };
+  if (typeof value === 'object') return { text: '{…}', color: '#9ca3af' };
+  return { text: String(value), color: '#d1d5db' };
+}
+
+function TreeNode({ name, value, isArrayIndex = false }) {
+  const [open, setOpen] = useState(false);
+  const isObj = value !== null && value !== undefined && typeof value === 'object' && !value?._truncated && value !== '[undefined]';
+  const { text, color } = valuePreview(value);
+
+  return (
+    <div>
+      <div
+        onClick={() => isObj && setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'flex-start', gap: 4, padding: '2px 0', cursor: isObj ? 'pointer' : 'default', userSelect: 'none' }}
+      >
+        <span style={{ color: '#4b5563', fontSize: 10, width: 10, flexShrink: 0, paddingTop: 1 }}>
+          {isObj ? (open ? '▼' : '▶') : ' '}
+        </span>
+        <span style={{ color: isArrayIndex ? '#6b7280' : '#60a5fa', fontSize: 11, fontFamily: 'monospace' }}>{name}</span>
+        <span style={{ color: '#4b5563', fontSize: 11, fontFamily: 'monospace' }}>:</span>
+        <span style={{ color, fontSize: 11, fontFamily: 'monospace', marginLeft: 4 }}>{text}</span>
+      </div>
+      {open && isObj && (
+        <div style={{ paddingLeft: 12, borderLeft: '1px solid #1f2937', marginLeft: 4 }}>
+          <ObjectTree data={value} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ObjectTree({ data }) {
+  if (data === null || data === undefined || data === '[undefined]')
+    return <span style={{ color: '#6b7280', fontSize: 11, fontFamily: 'monospace' }}>null</span>;
+  if (data?._truncated) return (
+    <div>
+      <div style={{ color: '#f59e0b', fontSize: 10, fontFamily: 'monospace', marginBottom: 4 }}>[truncated — showing first 2000 chars]</div>
+      <pre style={{ margin: 0, color: '#9ca3af', fontSize: 11, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{formatTruncatedJson(data.preview)}</pre>
+    </div>
+  );
+  if (typeof data !== 'object') {
+    const { text, color } = valuePreview(data);
+    return <span style={{ color, fontSize: 11, fontFamily: 'monospace' }}>{text}</span>;
+  }
+  const isArray = Array.isArray(data);
+  const entries = Object.entries(data);
+  if (entries.length === 0)
+    return <span style={{ color: '#6b7280', fontSize: 11, fontFamily: 'monospace' }}>{isArray ? '[]' : '{}'}</span>;
+  return (
+    <div>
+      {entries.map(([k, v]) => <TreeNode key={k} name={k} value={v} isArrayIndex={isArray} />)}
+    </div>
+  );
+}
+
+function ExpandableObject({ label, value, labelColor = '#9ca3af' }) {
+  const [open, setOpen] = useState(false);
+  const isExpandable = value !== null && value !== undefined && typeof value === 'object';
+  const { text: preview } = valuePreview(value);
+
+  return (
+    <div>
+      <div
+        onClick={() => isExpandable && setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'flex-start', gap: 5, padding: '3px 0', cursor: isExpandable ? 'pointer' : 'default', userSelect: 'none' }}
+      >
+        <span style={{ fontSize: 10, color: '#4b5563', width: 10, paddingTop: 1, flexShrink: 0 }}>
+          {isExpandable ? (open ? '▼' : '▶') : ' '}
+        </span>
+        <span style={{ fontSize: 11, color: labelColor, fontFamily: 'monospace', width: 78, flexShrink: 0 }}>{label}</span>
+        <span style={{ fontSize: 11, color: '#9ca3af', fontFamily: 'monospace' }}>{preview}</span>
+      </div>
+      {open && isExpandable && (
+        <div style={{ paddingLeft: 12, borderLeft: '1px solid #1f2937', marginLeft: 4, marginBottom: 4, maxHeight: 400, overflowY: 'auto' }}>
+          <ObjectTree data={value} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReduxGroupRow({ entry }) {
+  const timestamp = new Date(entry.timestamp).toLocaleTimeString();
+  const actionObj = entry.action ?? (entry.payload != null ? { type: entry.actionType, payload: entry.payload } : { type: entry.actionType });
+
+  return (
+    <div style={{ borderBottom: '1px solid #111827' }}>
+      <div style={{ padding: '6px 14px 2px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace', flexShrink: 0, width: 80 }}>{timestamp}</span>
+        <span style={{ fontSize: 11, color: '#60a5fa', fontFamily: 'monospace', fontWeight: 700, flexShrink: 0 }}>action</span>
+        <span style={{ fontSize: 11, color: '#e2e8f0', fontFamily: 'monospace', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {entry.actionType}
+        </span>
+        {entry.duration != null && (
+          <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace', flexShrink: 0 }}>{entry.duration}ms</span>
+        )}
+      </div>
+      <div style={{ padding: '2px 14px 6px 94px' }}>
+        <ExpandableObject label="prev state" value={entry.prevState} labelColor="#9ca3af" />
+        <ExpandableObject label="action" value={actionObj} labelColor="#60a5fa" />
+        <ExpandableObject label="next state" value={entry.nextState} labelColor="#d1d5db" />
+      </div>
+    </div>
+  );
+}
+
+function ReduxActionRow({ entry, expanded, onToggle }) {
+  const hasState = entry.prevState || entry.nextState;
+  return (
+    <div style={{ borderBottom: '1px solid #111827', background: expanded ? '#0d1525' : 'transparent' }}>
+      <div onClick={hasState ? onToggle : undefined}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', cursor: hasState ? 'pointer' : 'default' }}
+        onMouseEnter={e => { if (!expanded) e.currentTarget.style.background = '#0d1019'; }}
+        onMouseLeave={e => { if (!expanded) e.currentTarget.style.background = 'transparent'; }}>
+        <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace', flexShrink: 0, width: 80 }}>
+          {new Date(entry.timestamp).toLocaleTimeString()}
+        </span>
+        <span style={{ fontSize: 11, color: '#a78bfa', fontFamily: 'monospace', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {entry.actionType}
+        </span>
+        {entry.duration != null && (
+          <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace', flexShrink: 0 }}>{entry.duration}ms</span>
+        )}
+        {hasState && (
+          <span style={{ fontSize: 10, color: '#374151', flexShrink: 0 }}>{expanded ? '▲' : '▼'}</span>
+        )}
+      </div>
+      {expanded && (
+        <div style={{ padding: '0 14px 12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {entry.payload != null && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 4 }}>Payload</div>
+              <pre style={{ margin: 0, fontSize: 11, color: '#d1d5db', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: '#0a0d14', padding: 8, borderRadius: 4 }}>
+                {JSON.stringify(entry.payload, null, 2)}
+              </pre>
+            </div>
+          )}
+          {entry.prevState && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 4 }}>Prev State</div>
+              <pre style={{ margin: 0, fontSize: 11, color: '#9ca3af', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: '#0a0d14', padding: 8, borderRadius: 4, maxHeight: 200, overflow: 'auto' }}>
+                {entry.prevState?._truncated ? `[Truncated]\n${entry.prevState.preview}` : JSON.stringify(entry.prevState, null, 2)}
+              </pre>
+            </div>
+          )}
+          {entry.nextState && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 4 }}>Next State</div>
+              <pre style={{ margin: 0, fontSize: 11, color: '#d1d5db', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: '#0a0d14', padding: 8, borderRadius: 4, maxHeight: 200, overflow: 'auto' }}>
+                {entry.nextState?._truncated ? `[Truncated]\n${entry.nextState.preview}` : JSON.stringify(entry.nextState, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LogsPanel({ logs, onClear }) {
+  const [logsTab, setLogsTab] = useState('console');
+  const [expanded, setExpanded] = useState(null);
+  const [levelFilter, setLevelFilter] = useState('all');
+  const [actionFilter, setActionFilter] = useState('');
+  const bottomRef = useRef(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+
+  const consoleLogs = logs.filter(l => l.kind === 'console' || l.kind === 'redux');
+  const reduxLogs = logs.filter(l => l.kind === 'redux');
+
+  const filteredConsole = consoleLogs.filter(l => {
+    if (l.kind === 'redux') return true;
+    return levelFilter === 'all' || l.level === levelFilter;
+  });
+  const filteredRedux = actionFilter
+    ? reduxLogs.filter(l => l.actionType?.toLowerCase().includes(actionFilter.toLowerCase()))
+    : reduxLogs;
+
+  useEffect(() => {
+    if (autoScroll && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, autoScroll]);
+
+  const tabStyle = (active) => ({
+    background: 'none', border: 'none',
+    borderBottom: active ? '2px solid #3b82f6' : '2px solid transparent',
+    color: active ? '#e2e8f0' : '#6b7280',
+    padding: '8px 14px', cursor: 'pointer', fontSize: 12,
+    fontWeight: active ? 600 : 400,
+  });
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Sub-tabs + controls */}
+      <div style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid #1f2937', paddingLeft: 4, background: '#0d1019', flexShrink: 0 }}>
+        <button style={tabStyle(logsTab === 'console')} onClick={() => setLogsTab('console')}>
+          Console {consoleLogs.length > 0 && <span style={{ marginLeft: 4, fontSize: 10, color: '#4b5563' }}>{consoleLogs.length}</span>}
+        </button>
+        <button style={tabStyle(logsTab === 'redux')} onClick={() => setLogsTab('redux')}>
+          Redux {reduxLogs.length > 0 && <span style={{ marginLeft: 4, fontSize: 10, color: '#4b5563' }}>{reduxLogs.length}</span>}
+        </button>
+        <div style={{ flex: 1 }} />
+
+        {logsTab === 'console' && (
+          <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)}
+            style={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 5, color: '#e2e8f0', padding: '3px 6px', fontSize: 11, outline: 'none', marginRight: 8 }}>
+            <option value="all">All levels</option>
+            <option value="log">log</option>
+            <option value="info">info</option>
+            <option value="warn">warn</option>
+            <option value="error">error</option>
+          </select>
+        )}
+
+        {logsTab === 'redux' && (
+          <input value={actionFilter} onChange={e => setActionFilter(e.target.value)}
+            placeholder="Filter action type…"
+            style={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 5, color: '#e2e8f0', padding: '3px 8px', fontSize: 11, outline: 'none', width: 180, marginRight: 8 }} />
+        )}
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#4b5563', cursor: 'pointer', marginRight: 8 }}>
+          <input type="checkbox" checked={autoScroll} onChange={e => setAutoScroll(e.target.checked)} style={{ cursor: 'pointer' }} />
+          Auto-scroll
+        </label>
+
+        <button onClick={onClear}
+          style={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 5, color: '#9ca3af', padding: '3px 10px', fontSize: 11, cursor: 'pointer', marginRight: 8 }}>
+          Clear
+        </button>
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, overflow: 'auto', fontFamily: 'monospace' }}>
+        {logsTab === 'console' && (
+          filteredConsole.length === 0
+            ? <div style={{ color: '#4b5563', fontSize: 13, textAlign: 'center', marginTop: 60 }}>
+                No console logs captured yet.<br />
+                <span style={{ fontSize: 11, color: '#374151' }}>Enable with interceptConsole: true in startNetworkDebugger()</span>
+              </div>
+            : filteredConsole.map((entry, i) => (
+              entry.kind === 'redux'
+                ? <ReduxGroupRow key={entry.id || i} entry={entry} />
+                : <div key={entry.id || i} style={{ display: 'flex', gap: 10, padding: '5px 14px', borderBottom: '1px solid #0f1219', alignItems: 'flex-start', background: LEVEL_BG[entry.level] || '#1f2937' }}>
+                    <span style={{ fontSize: 10, color: '#4b5563', flexShrink: 0, width: 80, paddingTop: 2 }}>
+                      {new Date(entry.timestamp).toLocaleTimeString()}
+                    </span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: LEVEL_COLORS[entry.level] || '#9ca3af', flexShrink: 0, width: 36, paddingTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      {entry.level}
+                    </span>
+                    <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'flex-start', minWidth: 0 }}>
+                      {(entry.args || []).map((arg, ai) => <ArgView key={ai} arg={arg} />)}
+                    </div>
+                  </div>
+            ))
+        )}
+
+        {logsTab === 'redux' && (
+          filteredRedux.length === 0
+            ? <div style={{ color: '#4b5563', fontSize: 13, textAlign: 'center', marginTop: 60 }}>
+                No Redux actions captured yet.<br />
+                <span style={{ fontSize: 11, color: '#374151' }}>Add createReduxMiddleware() to your Redux store.</span>
+              </div>
+            : filteredRedux.map((entry, i) => (
+              <ReduxActionRow
+                key={entry.id || i}
+                entry={entry}
+                expanded={expanded === (entry.id || i)}
+                onToggle={() => setExpanded(prev => prev === (entry.id || i) ? null : (entry.id || i))}
+              />
+            ))
+        )}
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
 // ─── Timeline View ────────────────────────────────────────────────────────────
 
 function TimelineView({ requests, selected, onSelect, thresholds }) {
@@ -928,7 +1286,7 @@ const COLUMNS = [
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const { requests, connected, connectedApps, cookieStore, setCookieStore, clearAll } = useDebuggerConnection();
+  const { requests, connected, connectedApps, cookieStore, setCookieStore, logs, clearAll } = useDebuggerConnection();
   const { thresholds, addRule, deleteRule } = useThresholds();
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState('');
@@ -937,6 +1295,7 @@ export default function App() {
   const [showCookies, setShowCookies] = useState(false);
   const [showThresholds, setShowThresholds] = useState(false);
   const [viewMode, setViewMode] = useState('list');
+  const [mainTab, setMainTab] = useState('network');
 
   const totalCookies = Object.values(cookieStore).reduce((sum, domains) =>
     sum + Object.values(domains).reduce((s, c) => s + Object.keys(c).length, 0), 0);
@@ -986,7 +1345,17 @@ export default function App() {
 
         <div style={{ flex: 1 }} />
 
-        {/* View mode toggle */}
+        {/* Main tab switcher */}
+        <div style={{ display: 'flex', gap: 2, background: '#1f2937', borderRadius: 6, padding: 2, marginRight: 4 }}>
+          {[['network', '⬡ Network'], ['logs', '📋 Logs']].map(([tab, label]) => (
+            <button key={tab} onClick={() => setMainTab(tab)} style={{ background: mainTab === tab ? '#374151' : 'transparent', border: 'none', borderRadius: 4, color: mainTab === tab ? '#e2e8f0' : '#6b7280', padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: mainTab === tab ? 600 : 400, transition: 'all 0.1s' }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* View mode toggle — only in network tab */}
+        {mainTab === 'network' && (
         <div style={{ display: 'flex', gap: 2, background: '#1f2937', borderRadius: 6, padding: 2 }}>
           {['list', 'timeline'].map(mode => (
             <button key={mode} onClick={() => setViewMode(mode)} style={{ background: viewMode === mode ? '#374151' : 'transparent', border: 'none', borderRadius: 4, color: viewMode === mode ? '#e2e8f0' : '#6b7280', padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: viewMode === mode ? 600 : 400, textTransform: 'capitalize', transition: 'all 0.1s' }}>
@@ -994,7 +1363,9 @@ export default function App() {
             </button>
           ))}
         </div>
+        )}
 
+        {mainTab === 'network' && (<>
         <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter by URL…"
           style={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 6, color: '#e2e8f0', padding: '5px 10px', fontSize: 12, width: 200, outline: 'none' }} />
 
@@ -1031,11 +1402,14 @@ export default function App() {
         </button>
 
         <span style={{ fontSize: 11, color: '#4b5563' }}>{filtered.length} request{filtered.length !== 1 ? 's' : ''}</span>
+        </>)}
         <span style={{ fontSize: 10, color: '#374151', fontFamily: 'monospace' }}>v{__UI_VERSION__}</span>
       </div>
 
       {/* Main Content */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {mainTab === 'logs' && <LogsPanel logs={logs} onClear={clearAll} />}
+        {mainTab === 'network' && (<>
         {/* List + Column Headers (together so widths stay in sync) */}
         <div style={{ flex: selectedReq ? '0 0 55%' : '1 1 100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
           {/* Column Headers — list mode only */}
@@ -1120,6 +1494,7 @@ export default function App() {
 
         {/* Detail Panel */}
         {selectedReq && <RequestDetail req={selectedReq} onClose={() => setSelected(null)} cookieStore={cookieStore} />}
+        </>)}
       </div>
 
       {/* Cookie Manager */}

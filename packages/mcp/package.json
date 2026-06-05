@@ -1,0 +1,19 @@
+{
+  "name": "@onatvaris/rn-network-debugger-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for RN Network Debugger — exposes captured network requests to Claude Code",
+  "main": "src/index.js",
+  "bin": {
+    "rn-network-debugger-mcp": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "ws": "^8.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
