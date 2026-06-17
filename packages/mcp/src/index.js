@@ -144,6 +144,32 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'list_console_logs',
+      description: 'List captured console logs (log, info, warn, error) from the RN app. Supports filtering by level, text search, and time range.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          level:         { type: 'string',  description: 'Filter by level: log, info, warn, error' },
+          search:        { type: 'string',  description: 'Filter logs whose message contains this text' },
+          limit:         { type: 'number',  description: 'Max results to return (default 50)' },
+          since_seconds: { type: 'number',  description: 'Only show logs from the last N seconds' },
+        },
+      },
+    },
+    {
+      name: 'search_console_logs',
+      description: 'Search across all captured console logs for a keyword. Returns matching log entries with context.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          keyword:        { type: 'string',  description: 'Text to search for in log messages' },
+          level:          { type: 'string',  description: 'Limit search to a specific level: log, info, warn, error' },
+          case_sensitive: { type: 'boolean', description: 'Case-sensitive search (default false)' },
+        },
+        required: ['keyword'],
+      },
+    },
+    {
       name: 'export_har',
       description: 'Export captured requests in HAR (HTTP Archive) format. Compatible with Chrome DevTools, Charles, Postman, and other tools.',
       inputSchema: {
@@ -168,6 +194,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     case 'server_status':        return { content: [{ type: 'text', text: serverStatus() }] };
     case 'find_duplicates':      return { content: [{ type: 'text', text: findDuplicates(args) }] };
     case 'search_response_bodies': return { content: [{ type: 'text', text: searchResponseBodies(args) }] };
+    case 'list_console_logs':    return { content: [{ type: 'text', text: listConsoleLogs(args) }] };
+    case 'search_console_logs':  return { content: [{ type: 'text', text: searchConsoleLogs(args) }] };
     case 'export_har':           return { content: [{ type: 'text', text: exportHar(args) }] };
     case 'list_redux_actions':   return { content: [{ type: 'text', text: listReduxActions(args) }] };
     case 'get_redux_action':     return { content: [{ type: 'text', text: getReduxAction(args) }] };
@@ -500,6 +528,81 @@ function searchResponseBodies({ keyword, url_contains, case_sensitive = false } 
   });
 
   return lines.join('\n');
+}
+
+function listConsoleLogs({ level, search, limit = 50, since_seconds } = {}) {
+  let items = store.getAllConsoleLogs();
+
+  if (level)         items = items.filter(l => l.level === level);
+  if (since_seconds) {
+    const cutoff = Date.now() - since_seconds * 1000;
+    items = items.filter(l => l.timestamp && l.timestamp >= cutoff);
+  }
+  if (search) {
+    const needle = search.toLowerCase();
+    items = items.filter(l => argsToText(l.args).toLowerCase().includes(needle));
+  }
+
+  items = items.slice(-limit).reverse();
+
+  if (!items.length) return 'No console logs found matching the given filters.';
+
+  const LEVEL_PAD = { log: 'LOG ', info: 'INFO', warn: 'WARN', error: 'ERR ' };
+  const rows = items.map(l => {
+    const time = l.timestamp ? new Date(l.timestamp).toLocaleTimeString() : '';
+    const tag  = LEVEL_PAD[l.level] || l.level.toUpperCase().padEnd(4);
+    const msg  = truncate(argsToText(l.args), 120);
+    return `[${time}] [${l.id}] ${tag}  ${msg}`;
+  });
+
+  const total = store.getAllConsoleLogs().length;
+  return `Console logs (${items.length} shown, ${total} total):\n\n` + rows.join('\n');
+}
+
+function searchConsoleLogs({ keyword, level, case_sensitive = false } = {}) {
+  if (!keyword) return 'keyword is required.';
+
+  let items = store.getAllConsoleLogs();
+  if (level) items = items.filter(l => l.level === level);
+
+  const needle = case_sensitive ? keyword : keyword.toLowerCase();
+
+  const matches = items.filter(l => {
+    const text = case_sensitive ? argsToText(l.args) : argsToText(l.args).toLowerCase();
+    return text.includes(needle);
+  });
+
+  if (!matches.length) return `No console logs found containing "${keyword}".`;
+
+  const LEVEL_PAD = { log: 'LOG ', info: 'INFO', warn: 'WARN', error: 'ERR ' };
+  const lines = [`Found "${keyword}" in ${matches.length} console log(s):\n`];
+
+  matches.slice(-50).reverse().forEach(l => {
+    const time = l.timestamp ? new Date(l.timestamp).toLocaleTimeString() : '';
+    const tag  = LEVEL_PAD[l.level] || l.level.toUpperCase().padEnd(4);
+    const msg  = argsToText(l.args);
+    const text = case_sensitive ? msg : msg.toLowerCase();
+    const idx  = text.indexOf(needle);
+    const start = Math.max(0, idx - 60);
+    const end   = Math.min(msg.length, idx + keyword.length + 60);
+    const snippet = msg.slice(start, end).replace(/\n/g, ' ');
+    lines.push(`  [${time}] [${l.id}] ${tag}  …${snippet}…`);
+  });
+
+  lines.push(`\nUse list_console_logs with search="${keyword}" to see full messages.`);
+  return lines.join('\n');
+}
+
+function argsToText(args) {
+  if (!args || !args.length) return '';
+  return args.map(a => {
+    if (a === null || a === undefined) return String(a);
+    if (typeof a === 'object') {
+      if (a._type === 'Error') return `Error: ${a.message}`;
+      try { return JSON.stringify(a); } catch { return '[Object]'; }
+    }
+    return String(a);
+  }).join(' ');
 }
 
 function exportHar({ url_contains, limit = 200 } = {}) {

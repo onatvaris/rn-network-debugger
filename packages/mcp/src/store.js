@@ -2,6 +2,7 @@ const WebSocket = require('ws');
 
 const MAX_REQUESTS = 2000;
 const MAX_REDUX_ACTIONS = 500;
+const MAX_CONSOLE_LOGS = 1000;
 
 class RequestStore {
   constructor() {
@@ -9,6 +10,8 @@ class RequestStore {
     this.orderedIds = [];
     this.reduxActions = new Map();  // id → redux action
     this.reduxOrder = [];
+    this.consoleLogs = new Map();   // id → console log
+    this.consoleOrder = [];
     this.ws = null;
     this.connected = false;
     this.serverUrl = null;
@@ -45,6 +48,8 @@ class RequestStore {
         this.orderedIds = [];
         this.reduxActions.clear();
         this.reduxOrder = [];
+        this.consoleLogs.clear();
+        this.consoleOrder = [];
         return;
       }
 
@@ -76,7 +81,15 @@ class RequestStore {
       return;
     }
 
-    if (event === 'console:log') return; // console logs not tracked in MCP
+    if (event === 'console:log') {
+      if (this.consoleOrder.length >= MAX_CONSOLE_LOGS) {
+        const oldest = this.consoleOrder.shift();
+        this.consoleLogs.delete(oldest);
+      }
+      this.consoleOrder.push(item.id);
+      this.consoleLogs.set(item.id, item);
+      return;
+    }
 
     const existing = this.requests.get(item.id);
     if (existing) {
@@ -110,6 +123,14 @@ class RequestStore {
 
   getReduxActionById(id) {
     return this.reduxActions.get(id) || null;
+  }
+
+  getAllConsoleLogs() {
+    return this.consoleOrder.map(id => this.consoleLogs.get(id)).filter(Boolean);
+  }
+
+  getConsoleLogById(id) {
+    return this.consoleLogs.get(id) || null;
   }
 }
 
