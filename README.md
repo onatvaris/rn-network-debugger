@@ -455,6 +455,8 @@ and reconnects if the server restarts.
 | `list_redux_actions` | List captured Redux actions; also shows top-level state slice names for use with `get_redux_action` |
 | `get_redux_action` | Get details of a Redux action. Defaults to diff mode (only changed state keys). Supports `state_paths`, `include_prev_state`, `include_next_state`, and `max_chars` |
 | `search_redux_actions` | Search Redux action types, payloads, and state for a keyword |
+| `list_console_logs` | List captured console logs (`log`, `info`, `warn`, `error`) with optional level filter, text search, and time range |
+| `search_console_logs` | Search across all captured console logs for a keyword, with optional level and case-sensitivity filters |
 
 ### Example Prompts
 
@@ -471,6 +473,9 @@ Once connected, you can ask Claude things like:
 - *"List the last 20 Redux actions and show me which state slices they touched"*
 - *"Show the state diff for the last AUTH_SUCCESS action"*
 - *"Which Redux actions changed the basket slice?"*
+- *"Show me all error and warning logs from the last 2 minutes"*
+- *"Search console logs for 'undefined is not an object'"*
+- *"How many console errors appeared while navigating to the checkout screen?"*
 
 ---
 
