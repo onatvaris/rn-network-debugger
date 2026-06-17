@@ -12,15 +12,24 @@ export function interceptAxios(emitter) {
   let axios;
   try {
     axios = require('axios');
-    // axios default export veya .default olabilir
     if (axios.default) axios = axios.default;
   } catch {
-    // Axios yüklü değil, atla
     return;
   }
 
-  // Request interceptor
-  axios.interceptors.request.use(
+  addAxiosInterceptors(axios, emitter);
+
+  // Patch axios.create so custom instances are also intercepted
+  const originalCreate = axios.create.bind(axios);
+  axios.create = function (...args) {
+    const instance = originalCreate(...args);
+    addAxiosInterceptors(instance, emitter);
+    return instance;
+  };
+}
+
+function addAxiosInterceptors(instance, emitter) {
+  instance.interceptors.request.use(
     (config) => {
       const url = buildFullUrl(config);
       const id = emitter.onRequestStart({
@@ -30,18 +39,13 @@ export function interceptAxios(emitter) {
         body: config.data,
         type: 'axios',
       });
-
-      // id'yi config'e ekle, response interceptor'da kullanalım
       config._debugId = id;
       return config;
     },
-    (error) => {
-      return Promise.reject(error);
-    }
+    (error) => Promise.reject(error)
   );
 
-  // Response interceptor
-  axios.interceptors.response.use(
+  instance.interceptors.response.use(
     (response) => {
       const id = response.config?._debugId;
       if (id) {
