@@ -31,8 +31,8 @@ You are the lead architect and product advisor for **RN Network Debugger** — a
 - Recommend semver bump (patch/minor/major) based on actual changes
 - Identify breaking changes that need migration guides
 - Review CHANGELOG structure and content
-- Flag publishable packages: core, server, metro-plugin (ui is internal-only)
-- Check npm package names: `@onatvaris/rn-network-debugger-core`, `@onatvaris/rn-network-debugger-server`, `@onatvaris/rn-network-debugger-metro-plugin`
+- Flag publishable packages: core, server, metro-plugin, mcp (ui is internal-only)
+- Check npm package names: `@onatvaris/rn-network-debugger-core`, `@onatvaris/rn-network-debugger-server`, `@onatvaris/rn-network-debugger-metro-plugin`, `@onatvaris/rn-network-debugger-mcp`
 
 ## Project Context
 
@@ -40,6 +40,7 @@ You are the lead architect and product advisor for **RN Network Debugger** — a
 - `packages/core` — RN-side interceptors (JS + Android Java + iOS ObjC)
 - `packages/server` — ws + express server; serves UI from `server/public/`
 - `packages/metro-plugin` — Metro config wrapper; spawns the server
+- `packages/mcp` — MCP server; exposes captured requests/redux actions/console logs as tools to Claude Code
 - `packages/ui` — React + Vite DevTools panel; builds directly to `server/public/` via vite outDir
 
 **Critical invariants to preserve:**
@@ -49,7 +50,7 @@ You are the lead architect and product advisor for **RN Network Debugger** — a
 - WS endpoints: `/app` (RN side), `/ui` (browser side)
 - `cookies.js` uses optional `require('@react-native-cookies/cookies')` — must stay silently skippable
 
-**MCP server** (`packages/mcp/`) exposes tools: `list_requests`, `get_request`, `search_response_bodies`, `find_duplicates`, `analyze_performance`, `export_har`, `get_recent_requests`, `server_status`.
+**MCP server** (`packages/mcp/`) exposes tools: `list_requests`, `get_request`, `search_response_bodies`, `find_duplicates`, `analyze_performance`, `export_har`, `get_recent_requests`, `server_status`, `list_redux_actions`, `get_redux_action`, `search_redux_actions`, `list_console_logs`, `search_console_logs`.
 
 ## How to Advise
 

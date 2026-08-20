@@ -28,13 +28,24 @@ if (__DEV__) {
 
 ```ts
 startNetworkDebugger({
-  serverUrl?: string;       // default: 'ws://localhost:8788'
-  interceptAxios?: boolean; // default: true
-  interceptWS?: boolean;    // default: true
-  ignoredHosts?: string[];  // hosts to exclude (localhost:8788 always excluded)
+  serverUrl?: string;         // default: 'ws://localhost:8788'
+  interceptAxios?: boolean;   // default: true
+  interceptWS?: boolean;      // default: true
+  interceptConsole?: boolean; // default: false
+  ignoredHosts?: string[];    // hosts to exclude (localhost:8788 always excluded)
 })
 // Returns: { stop: () => void }
 ```
+
+### Redux action capture
+
+```js
+import { createReduxMiddleware } from '@onatvaris/rn-network-debugger-core';
+
+const store = createStore(rootReducer, applyMiddleware(createReduxMiddleware()));
+```
+
+`createReduxMiddleware()` must be called after `startNetworkDebugger()` — it binds to the emitter created during startup.
 
 ## Expo
 

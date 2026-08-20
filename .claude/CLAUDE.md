@@ -5,13 +5,14 @@ interceptors to a browser-based DevTools UI over WebSocket.
 
 ## Package Structure
 - packages/core        → RN interceptors (JS + Android Java + iOS ObjC)
-  - src/index.js         → startNetworkDebugger() entry point
-  - src/emitter.js       → central event bus (onRequestStart/Done/Error/HeadersUpdate/WSMessage)
+  - src/index.js         → startNetworkDebugger() entry point, createReduxMiddleware() export, interceptConsole option
+  - src/emitter.js       → central event bus (onRequestStart/Done/Error/HeadersUpdate/WSMessage/ConsoleLog/ReduxAction)
   - src/transport.js     → WebSocket connection + queue
   - src/cookies.js       → optional @react-native-cookies/cookies integration
-  - src/interceptors/    → fetch, xhr, axios, websocket interceptors
+  - src/interceptors/    → fetch, xhr, axios, websocket, console, redux interceptors
 - packages/server      → WebSocket + HTTP server (ws, express). UI: server/public/
 - packages/metro-plugin → Metro config wrapper, spawns the server
+- packages/mcp         → MCP server exposing captured requests/redux actions/console logs as tools to Claude Code
 - packages/ui          → React + Vite DevTools panel. Build: npm run build → ../server/public/ (vite outDir)
 
 ## Critical Rules
@@ -30,6 +31,7 @@ interceptors to a browser-based DevTools UI over WebSocket.
 ## Package Dependencies
 - packages/server:       ws, express, cors
 - packages/metro-plugin: ws
+- packages/mcp:          @modelcontextprotocol/sdk, ws
 - packages/ui:           react, react-dom, vite, @vitejs/plugin-react
 
 ## Common Operations
@@ -53,6 +55,7 @@ cd ../.. && zip -r rn-network-debugger.zip packages/ README.md example/ --exclud
 - @onatvaris/rn-network-debugger-core
 - @onatvaris/rn-network-debugger-server
 - @onatvaris/rn-network-debugger-metro-plugin
+- @onatvaris/rn-network-debugger-mcp
 - ui package is internal only (not published)
 - @react-native-cookies/cookies is an optional peer dep of core (cookie injection feature)
 

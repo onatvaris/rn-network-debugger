@@ -14,6 +14,8 @@
      packages/server/package.json \
      packages/metro-plugin/src \
      packages/metro-plugin/package.json \
+     packages/mcp/src \
+     packages/mcp/package.json \
      packages/ui/src \
      packages/server/public \
      packages/ui/index.html \

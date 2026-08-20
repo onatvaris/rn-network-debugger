@@ -19,7 +19,9 @@ rn-network-debugger/
 │   │           ├── fetch.js         # global.fetch monkey-patch
 │   │           ├── xhr.js           # XMLHttpRequest wrap
 │   │           ├── axios.js         # Axios interceptor API
-│   │           └── websocket.js     # global.WebSocket proxy
+│   │           ├── websocket.js     # global.WebSocket proxy
+│   │           ├── console.js       # console.* interceptor
+│   │           └── redux.js         # createReduxMiddleware() for Redux action capture
 │   │
 │   ├── server/                      # DevTools WebSocket + HTTP server — published to npm
 │   │   ├── src/index.js             # Express + ws, port 8788
@@ -27,6 +29,9 @@ rn-network-debugger/
 │   │
 │   ├── metro-plugin/                # Metro config wrapper — published to npm
 │   │   └── src/index.js             # withNetworkDebugger(), starts server automatically
+│   │
+│   ├── mcp/                         # MCP server — published to npm
+│   │   └── src/index.js             # exposes captured requests/redux actions/console logs as MCP tools
 │   │
 │   └── ui/                          # Browser DevTools panel (React + Vite) — not published
 │       ├── src/App.jsx              # Main UI component
@@ -145,6 +150,6 @@ Use the `/add-interceptor` slash command in Claude Code for a guided walkthrough
 See the `/release` slash command in Claude Code for the automated release flow.
 
 Manual steps:
-1. Bump versions in `packages/core/package.json`, `packages/server/package.json`, `packages/metro-plugin/package.json`
+1. Bump versions in `packages/core/package.json`, `packages/server/package.json`, `packages/metro-plugin/package.json`, `packages/mcp/package.json`
 2. Build and copy the UI: `cd packages/ui && npm run build`
 3. Publish each package: `npm publish --access public` (from each package directory)
