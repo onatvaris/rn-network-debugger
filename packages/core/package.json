@@ -23,7 +23,8 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/onatvaris/rn-network-debugger"
+    "url": "git+https://github.com/onatvaris/rn-network-debugger.git",
+    "directory": "packages/core"
   },
   "peerDependencies": {
     "react-native": ">=0.71.0"

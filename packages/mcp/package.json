@@ -28,7 +28,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/onatvaris/rn-network-debugger"
+    "url": "git+https://github.com/onatvaris/rn-network-debugger.git",
+    "directory": "packages/mcp"
   },
   "engines": {
     "node": ">=18"
