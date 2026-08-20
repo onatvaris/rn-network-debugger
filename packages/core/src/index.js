@@ -37,7 +37,7 @@ export function startNetworkDebugger(options = {}) {
   _started = true;
 
   const serverUrl = options.serverUrl || 'ws://localhost:8788';
-  let serverHost = 'localhost:8788';
+  let serverHost = '';
   try { serverHost = new URL(serverUrl).host; } catch {}
 
   const config = {

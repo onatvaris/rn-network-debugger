@@ -170,7 +170,7 @@ export class NetworkEventEmitter {
     if (!url) return true;
     try {
       const hostname = new URL(url).host;
-      return this._ignoredHosts.some(h => hostname.includes(h));
+      return this._ignoredHosts.some(h => h && hostname.includes(h));
     } catch {
       return false;
     }
