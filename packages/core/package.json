@@ -1,6 +1,6 @@
 {
   "name": "@onatvaris/rn-network-debugger-core",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Network interceptors for React Native (fetch, XHR, Axios, WebSocket, OkHttp, NSURLProtocol)",
   "main": "src/index.js",
   "files": [
