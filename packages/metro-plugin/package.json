@@ -1,6 +1,6 @@
 {
   "name": "@onatvaris/rn-network-debugger-metro-plugin",
-  "version": "1.0.2",
+  "version": "1.3.3",
   "description": "Metro config wrapper that automatically starts the RN Network Debugger server",
   "main": "src/index.js",
   "files": [
