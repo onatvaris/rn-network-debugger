@@ -25,5 +25,9 @@
   },
   "dependencies": {
     "ws": "^8.16.0"
+  },
+  "homepage": "https://github.com/onatvaris/rn-network-debugger#readme",
+  "bugs": {
+    "url": "https://github.com/onatvaris/rn-network-debugger/issues"
   }
 }

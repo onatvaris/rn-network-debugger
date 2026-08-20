@@ -9,6 +9,19 @@
   "scripts": {
     "start": "node src/index.js"
   },
+  "keywords": [
+    "react-native",
+    "network",
+    "debugger",
+    "devtools",
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "claude-code",
+    "ai-tools"
+  ],
+  "author": "Onat Varis",
+  "license": "Apache-2.0",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "ws": "^8.0.0"
@@ -19,5 +32,9 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "homepage": "https://github.com/onatvaris/rn-network-debugger#readme",
+  "bugs": {
+    "url": "https://github.com/onatvaris/rn-network-debugger/issues"
   }
 }
