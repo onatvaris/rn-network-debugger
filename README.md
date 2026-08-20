@@ -1,5 +1,9 @@
 # RN Network Debugger
 
+[![npm core](https://img.shields.io/npm/v/@onatvaris/rn-network-debugger-core.svg?label=core)](https://www.npmjs.com/package/@onatvaris/rn-network-debugger-core)
+[![npm downloads](https://img.shields.io/npm/dm/@onatvaris/rn-network-debugger-core.svg)](https://www.npmjs.com/package/@onatvaris/rn-network-debugger-core)
+[![license](https://img.shields.io/npm/l/@onatvaris/rn-network-debugger-core.svg)](./LICENSE)
+
 A zero-dependency, browser-based network debugger for React Native.
 Works with both **Bare React Native** and **Expo** projects. Supports Android and iOS.
 

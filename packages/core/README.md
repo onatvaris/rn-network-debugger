@@ -1,5 +1,9 @@
 # @onatvaris/rn-network-debugger-core
 
+[![npm version](https://img.shields.io/npm/v/@onatvaris/rn-network-debugger-core.svg)](https://www.npmjs.com/package/@onatvaris/rn-network-debugger-core)
+[![npm downloads](https://img.shields.io/npm/dm/@onatvaris/rn-network-debugger-core.svg)](https://www.npmjs.com/package/@onatvaris/rn-network-debugger-core)
+[![license](https://img.shields.io/npm/l/@onatvaris/rn-network-debugger-core.svg)](../../LICENSE)
+
 Network interceptors for React Native. Captures `fetch`, `XHR`, `Axios`, `WebSocket`, OkHttp (Android), and NSURLProtocol (iOS) traffic and forwards it to the [RN Network Debugger](https://github.com/onatvaris/rn-network-debugger) DevTools server.
 
 ## Installation
